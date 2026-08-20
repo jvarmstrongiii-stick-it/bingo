@@ -23,3 +23,4 @@ document.querySelector("#demo").onclick=()=>{let wins=[];for(let r=0;r<5;r++)if(
 async function camera(){try{let s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});document.querySelector("#cam").srcObject=s;document.querySelector("#cam2").srcObject=s;document.querySelector("#cammsg").textContent="Rear camera ready"}catch(e){document.querySelector("#cammsg").textContent="Camera error: "+e.message}}
 draw();drawP();mode();camera();
 </script></body></html>
+
