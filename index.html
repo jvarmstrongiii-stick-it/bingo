@@ -23,6 +23,7 @@ input[type=file]{display:none}
 video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 .scanline{position:absolute;left:5%;right:5%;height:3px;background:#4eed88;box-shadow:0 0 14px #4eed88;animation:s 2s infinite}
 @keyframes s{0%{top:10%}50%{top:90%}100%{top:10%}}
+.shutter{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:5;width:auto;min-width:130px;border:4px solid #fff;border-radius:999px;padding:14px 22px;background:#39df7a;color:#06130a;font-size:17px;font-weight:1000;box-shadow:0 3px 18px #000}
 .grid75{display:grid;grid-template-columns:repeat(15,1fr);gap:3px}
 .n{aspect-ratio:1;border:0;border-radius:4px;background:#28323f;color:#8994a4;font-size:11px;padding:0}
 .n.on{background:#fff;color:#000;font-weight:900}
@@ -35,6 +36,179 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 .cell{aspect-ratio:1;border:4px solid #3b4657;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;position:relative;background:#171d27}
 .cell.good{border-color:#3ce77a;background:#123d22;box-shadow:0 0 12px #28d76b}
 .cell.bad{border-color:#ff4655;background:#3d151b}
+.cell.bad:after{content:"×";position:absolute;font-size:60px;color:#ff4655}
+.cell.skull:after{content:"☠";position:absolute;right:2px;top:-4px;font-size:24px}
+.winner{text-align:center;font-size:54px;font-weight:1000;color:#4cff8b;animation:f .55s alternate infinite}
+@keyframes f{to{opacity:.25;transform:scale(1.03)}}
+.loser{text-align:center;font-size:42px;font-weight:1000;color:#ff5260}
+.badge{font-size:12px;padding:6px 10px;border-radius:99px;background:#273347}
+</style>
+</head>
+<body>
+<header><b>BINGO VALIDATOR</b><button id="topNew">NEW GAME</button></header>
+<main>
+
+<section id="stepBoard">
+<div class="card">
+<h2>1. Read Caller Board</h2>
+<p class="muted">Use the live camera or choose a saved photo. For this demo, choosing your saved caller-board photo loads the known called-number state from that game.</p>
+<div class="camera" id="boardCamWrap"><video id="boardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureBoard" aria-label="Capture caller board">CAPTURE</button></div>
+<img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
+<div class="row">
+<button class="btn dark" id="useBoardCamera">USE CAMERA</button>
+<label class="filelabel">CHOOSE PHOTO<input id="boardFile" type="file" accept="image/*"></label>
+</div>
+<p id="boardStatus" class="center muted">Rear camera ready.</p>
+</div>
+
+<div id="confirmBoard" class="card hidden">
+<h2>2. Confirm Called Numbers</h2>
+<p class="center"><b><span id="calledCount">0</span> NUMBERS CALLED</b></p>
+<div class="grid75" id="grid75"></div>
+<p class="muted">Tap any number to correct it before locking the game.</p>
+<h2 style="margin-top:18px">3. Current Pattern</h2>
+<div class="patterns" id="patterns"></div>
+<button class="btn green" id="lockGame">LOCK GAME</button>
+</div>
+</section>
+
+<section id="stepCards" class="hidden">
+<div class="card">
+<div class="row" style="align-items:center"><div><h2>Game Locked</h2><p id="lockedSummary" class="muted"></p></div><span class="badge">LOCKED</span></div>
+</div>
+
+<div class="card">
+<h2>Scan Claimed Card</h2>
+<p class="muted">Use the live camera or choose the saved winning-card photo.</p>
+<div class="camera" id="cardCamWrap"><video id="cardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureCard" aria-label="Capture bingo card">CAPTURE</button></div>
+<img id="cardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
+<div class="row">
+<button class="btn dark" id="useCardCamera">USE CAMERA</button>
+<label class="filelabel">CHOOSE PHOTO<input id="cardFile" type="file" accept="image/*"></label>
+</div>
+</div>
+
+<div id="result" class="card hidden"></div>
+</section>
+
+</main>
+<script>
+const demoCalled=[2,4,5,6,8,9,10,12,14,15,17,18,19,22,23,25,26,27,28,29,31,32,34,35,36,38,40,42,47,48,49,51,52,54,55,61,63,64,65,72,75];
+const hardCard=[
+ [6,24,40,57,70],
+ [11,30,42,51,65],
+ [5,17,"FREE",48,62],
+ [10,26,31,55,61],
+ [12,23,38,56,64]
+];
+const called=new Set(JSON.parse(localStorage.getItem("called")||"[]"));
+let pattern=localStorage.getItem("pattern")||"Any Horizontal Line";
+let locked=localStorage.getItem("locked")==="1";
+let stream=null;
+const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
+
+async function ensureCamera(){
+ try{
+   if(!stream) stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+   boardCam.srcObject=stream; cardCam.srcObject=stream;
+   boardStatus.textContent="Rear camera ready.";
+ }catch(e){boardStatus.textContent="Camera unavailable: "+e.message}
+}
+function save(){localStorage.setItem("called",JSON.stringify([...called]));localStorage.setItem("pattern",pattern);localStorage.setItem("locked",locked?"1":"0")}
+function render75(){
+ grid75.innerHTML="";
+ for(let i=1;i<=75;i++){
+   const b=document.createElement("button");
+   b.className="n "+(called.has(i)?"on":"");
+   b.textContent=i;
+   b.onclick=()=>{called.has(i)?called.delete(i):called.add(i);save();render75()};
+   grid75.appendChild(b);
+ }
+ calledCount.textContent=called.size;
+}
+function renderPatterns(){
+ patterns.innerHTML="";
+ pats.forEach(x=>{
+   const b=document.createElement("button");
+   b.className="p "+(pattern===x?"on":"");
+   b.textContent=x;
+   b.onclick=()=>{pattern=x;save();renderPatterns()};
+   patterns.appendChild(b);
+ });
+}
+function showMode(){
+ stepBoard.classList.toggle("hidden",locked);
+ stepCards.classList.toggle("hidden",!locked);
+ if(locked) lockedSummary.textContent=pattern+" • "+called.size+" numbers called";
+}
+function resetGame(){
+ if(!confirm("Clear the current locked game and start a new game?")) return;
+ called.clear(); pattern="Any Horizontal Line"; locked=false; localStorage.clear();
+ boardPreview.src=""; cardPreview.src=""; boardPreview.classList.add("hidden");cardPreview.classList.add("hidden");
+ boardCamWrap.classList.remove("hidden");cardCamWrap.classList.remove("hidden");
+ confirmBoard.classList.add("hidden");result.classList.add("hidden");
+ render75();renderPatterns();showMode();
+}
+function loadImage(input,img,camwrap,cb){
+ const f=input.files&&input.files[0]; if(!f)return;
+ img.src=URL.createObjectURL(f); img.classList.remove("hidden"); camwrap.classList.add("hidden"); cb&&cb();
+}
+function setDemoBoardFromPhoto(){
+ called.clear(); demoCalled.forEach(n=>called.add(n));
+ pattern="Any Horizontal Line"; save(); render75();renderPatterns();confirmBoard.classList.remove("hidden");
+ boardStatus.textContent="Caller-board photo cached for demo. Confirm/correct below.";
+}
+boardFile.onchange=()=>loadImage(boardFile,boardPreview,boardCamWrap,setDemoBoardFromPhoto);
+function captureFrame(video,img,camwrap,cb){
+ const c=document.createElement("canvas");
+ if(!video.videoWidth||!video.videoHeight){alert("Camera is still starting. Try again in a second.");return}
+ c.width=video.videoWidth;c.height=video.videoHeight;
+ c.getContext("2d").drawImage(video,0,0,c.width,c.height);
+ img.src=c.toDataURL("image/jpeg",.92);
+ img.classList.remove("hidden");camwrap.classList.add("hidden");
+ cb&&cb();
+}
+useBoardCamera.onclick=()=>{boardPreview.classList.add("hidden");boardCamWrap.classList.remove("hidden")};
+captureBoard.onclick=()=>captureFrame(boardCam,boardPreview,boardCamWrap,setDemoBoardFromPhoto);
+lockGame.onclick=()=>{if(!called.size)return alert("Confirm called numbers first.");locked=true;save();showMode()};
+topNew.onclick=resetGame;
+useCardCamera.onclick=()=>{cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden")};
+captureCard.onclick=()=>captureFrame(cardCam,cardPreview,cardCamWrap,evaluateCard);
+
+function evaluateCard(){
+ // MVP demo evaluation for current hard card and Any Horizontal Line.
+ const wins=[];
+ for(let r=0;r<5;r++){
+   if(hardCard[r].every(v=>v==="FREE"||called.has(v))) wins.push(r);
+ }
+ let closest=0,best=-1;
+ for(let r=0;r<5;r++){
+   const score=hardCard[r].filter(v=>v==="FREE"||called.has(v)).length;
+   if(score>best){best=score;closest=r}
+ }
+ const isWinner=wins.length>0;
+ result.classList.remove("hidden");
+ result.innerHTML=`<div class="${isWinner?"winner":"loser"}">${isWinner?"✓ BINGO!":"NO BINGO"}</div>
+ <p class="center"><b>${pattern}</b></p>
+ <div class="bcard">${hardCard.flatMap((row,r)=>row.map(v=>{
+   const req=isWinner?wins.includes(r):r===closest;
+   const ok=v==="FREE"||called.has(v);
+   return `<div class="cell ${req?(ok?"good":"bad"):""}">${v}</div>`;
+ })).join("")}</div>
+ <p class="center"><b>${isWinner?"10 • 26 • 31 • 55 • 61":"Closest attempted line shown above"}</b></p>
+ ${isWinner?'<button class="btn green" onclick="alert(\'Winner photo flow is next.\')">TAKE WINNER PHOTO</button>':''}
+ <button class="btn dark" id="nextCardBtn">SCAN / UPLOAD NEXT CARD</button>`;
+ document.getElementById("nextCardBtn").onclick=()=>{
+   result.classList.add("hidden");cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden");cardFile.value="";
+   document.querySelector("#stepCards .card:nth-child(2)").scrollIntoView({behavior:"smooth"});
+ };
+ setTimeout(()=>result.scrollIntoView({behavior:"smooth"}),120);
+}
+cardFile.onchange=()=>loadImage(cardFile,cardPreview,cardCamWrap,evaluateCard);
+
+render75();renderPatterns();showMode();ensureCamera();
+</script>
+</body></html>.cell.bad{border-color:#ff4655;background:#3d151b}
 .cell.bad:after{content:"×";position:absolute;font-size:60px;color:#ff4655}
 .cell.skull:after{content:"☠";position:absolute;right:2px;top:-4px;font-size:24px}
 .winner{text-align:center;font-size:54px;font-weight:1000;color:#4cff8b;animation:f .55s alternate infinite}
