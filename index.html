@@ -58,7 +58,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 <button class="btn dark" id="useBoardCamera">USE CAMERA</button>
 <label class="filelabel">CHOOSE PHOTO<input id="boardFile" type="file" accept="image/*"></label>
 </div>
-<p id="boardStatus" class="center muted">Rear camera ready.</p>
+<p id="boardStatus" class="center muted">Rear camera ready.</p><p id="sourceStatus" class="center muted">Caller source: Auto detect</p>
 </div>
 
 <div id="confirmBoard" class="card hidden">
@@ -106,6 +106,51 @@ let pattern=localStorage.getItem("pattern")||"Any Horizontal Line";
 let locked=localStorage.getItem("locked")==="1";
 let stream=null;
 const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
+const CallerSource={DIGITAL:"digital-board",RACK:"physical-rack",MANUAL:"manual"};
+function callerState(sourceType,numbers,confidence=1,uncertainNumbers=[]){
+ return {sourceType,calledNumbers:[...numbers].sort((a,b)=>a-b),pattern,confidence,uncertainNumbers};
+}
+function setSource(state){
+ sourceStatus.textContent="Caller source: "+state.sourceType+" • "+Math.round(state.confidence*100)+"% confidence";
+ called.clear();state.calledNumbers.forEach(n=>called.add(n));save();render75();renderPatterns();confirmBoard.classList.remove("hidden");
+}
+function rackNumber(col,row){return col*15+row+1}
+// Calibration profile from the first real physical rack captured 2026-09-26.
+// Coordinates are normalized to the source image and bilinearly interpolated.
+const rackProfile={tl:[.326,.077],tr:[.568,.077],bl:[.365,.615],br:[.654,.604]};
+function mix(a,b,t){return a+(b-a)*t}
+function rackPoint(col,row){
+ const u=col/4,v=row/14;
+ const lx=mix(rackProfile.tl[0],rackProfile.bl[0],v),ly=mix(rackProfile.tl[1],rackProfile.bl[1],v);
+ const rx=mix(rackProfile.tr[0],rackProfile.br[0],v),ry=mix(rackProfile.tr[1],rackProfile.br[1],v);
+ return [mix(lx,rx,u),mix(ly,ry,u)];
+}
+function analyzePhysicalRack(img){
+ const c=document.createElement("canvas"),w=600,h=Math.round(600*img.naturalHeight/img.naturalWidth);
+ c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});x.drawImage(img,0,0,w,h);
+ const d=x.getImageData(0,0,w,h).data, occupied=[],uncertain=[];
+ function lum(px,py,r){
+  let sum=0,n=0,sat=0;
+  for(let yy=Math.max(0,py-r);yy<Math.min(h,py+r);yy+=3)for(let xx=Math.max(0,px-r);xx<Math.min(w,px+r);xx+=3){
+   const i=(yy*w+xx)*4,R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B);
+   sum+=(R+G+B)/3;sat+=mx-mn;n++;
+  } return [sum/n,sat/n];
+ }
+ for(let col=0;col<5;col++)for(let row=0;row<15;row++){
+  const [nx,ny]=rackPoint(col,row),px=Math.round(nx*w),py=Math.round(ny*h);
+  const [center,cs]=lum(px,py,11),[ring,rs]=lum(px,py,22);
+  const score=(center-ring)+cs*.22;
+  const num=rackNumber(col,row);
+  if(score>18) occupied.push(num); else if(score>9) uncertain.push(num);
+ }
+ const confidence=Math.max(.55,1-uncertain.length/30);
+ return callerState(CallerSource.RACK,occupied,confidence,uncertain);
+}
+function analyzeCallerPhoto(img){
+ // Current calibrated detector targets the physical 5x15 rack. All results remain
+ // editable in the 1-75 confirmation grid before the game can be locked.
+ return analyzePhysicalRack(img);
+}
 
 async function ensureCamera(){
  try{
@@ -154,9 +199,9 @@ function loadImage(input,img,camwrap,cb){
  img.src=URL.createObjectURL(f); img.classList.remove("hidden"); camwrap.classList.add("hidden"); cb&&cb();
 }
 function setDemoBoardFromPhoto(){
- called.clear(); demoCalled.forEach(n=>called.add(n));
- pattern="Any Horizontal Line"; save(); render75();renderPatterns();confirmBoard.classList.remove("hidden");
- boardStatus.textContent="Caller-board photo cached for demo. Confirm/correct below.";
+ if(!boardPreview.complete||!boardPreview.naturalWidth)return;
+ const state=analyzeCallerPhoto(boardPreview);setSource(state);
+ boardStatus.textContent="Physical rack analyzed: "+state.calledNumbers.length+" occupied; "+state.uncertainNumbers.length+" uncertain. Confirm/correct below.";
 }
 boardFile.onchange=()=>loadImage(boardFile,boardPreview,boardCamWrap,setDemoBoardFromPhoto);
 function captureFrame(video,img,camwrap,cb){
@@ -174,168 +219,6 @@ lockGame.onclick=()=>{if(!called.size)return alert("Confirm called numbers first
 topNew.onclick=resetGame;
 useCardCamera.onclick=()=>{cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden")};
 captureCard.onclick=()=>captureFrame(cardCam,cardPreview,cardCamWrap,evaluateCard);
-
-function evaluateCard(){
- // MVP demo evaluation for current hard card and Any Horizontal Line.
- const wins=[];
- for(let r=0;r<5;r++){
-   if(hardCard[r].every(v=>v==="FREE"||called.has(v))) wins.push(r);
- }
- let closest=0,best=-1;
- for(let r=0;r<5;r++){
-   const score=hardCard[r].filter(v=>v==="FREE"||called.has(v)).length;
-   if(score>best){best=score;closest=r}
- }
- const isWinner=wins.length>0;
- result.classList.remove("hidden");
- result.innerHTML=`<div class="${isWinner?"winner":"loser"}">${isWinner?"✓ BINGO!":"NO BINGO"}</div>
- <p class="center"><b>${pattern}</b></p>
- <div class="bcard">${hardCard.flatMap((row,r)=>row.map(v=>{
-   const req=isWinner?wins.includes(r):r===closest;
-   const ok=v==="FREE"||called.has(v);
-   return `<div class="cell ${req?(ok?"good":"bad"):""}">${v}</div>`;
- })).join("")}</div>
- <p class="center"><b>${isWinner?"10 • 26 • 31 • 55 • 61":"Closest attempted line shown above"}</b></p>
- ${isWinner?'<button class="btn green" onclick="alert(\'Winner photo flow is next.\')">TAKE WINNER PHOTO</button>':''}
- <button class="btn dark" id="nextCardBtn">SCAN / UPLOAD NEXT CARD</button>`;
- document.getElementById("nextCardBtn").onclick=()=>{
-   result.classList.add("hidden");cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden");cardFile.value="";
-   document.querySelector("#stepCards .card:nth-child(2)").scrollIntoView({behavior:"smooth"});
- };
- setTimeout(()=>result.scrollIntoView({behavior:"smooth"}),120);
-}
-cardFile.onchange=()=>loadImage(cardFile,cardPreview,cardCamWrap,evaluateCard);
-
-render75();renderPatterns();showMode();ensureCamera();
-</script>
-</body></html>.cell.bad{border-color:#ff4655;background:#3d151b}
-.cell.bad:after{content:"×";position:absolute;font-size:60px;color:#ff4655}
-.cell.skull:after{content:"☠";position:absolute;right:2px;top:-4px;font-size:24px}
-.winner{text-align:center;font-size:54px;font-weight:1000;color:#4cff8b;animation:f .55s alternate infinite}
-@keyframes f{to{opacity:.25;transform:scale(1.03)}}
-.loser{text-align:center;font-size:42px;font-weight:1000;color:#ff5260}
-.badge{font-size:12px;padding:6px 10px;border-radius:99px;background:#273347}
-</style>
-</head>
-<body>
-<header><b>BINGO VALIDATOR</b><button id="topNew">NEW GAME</button></header>
-<main>
-
-<section id="stepBoard">
-<div class="card">
-<h2>1. Read Caller Board</h2>
-<p class="muted">Use the live camera or choose a saved photo. For this demo, choosing your saved caller-board photo loads the known called-number state from that game.</p>
-<div class="camera" id="boardCamWrap"><video id="boardCam" autoplay playsinline muted></video><div class="scanline"></div></div>
-<img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
-<div class="row">
-<button class="btn dark" id="useBoardCamera">USE CAMERA</button>
-<label class="filelabel">CHOOSE PHOTO<input id="boardFile" type="file" accept="image/*"></label>
-</div>
-<p id="boardStatus" class="center muted">Rear camera ready.</p>
-</div>
-
-<div id="confirmBoard" class="card hidden">
-<h2>2. Confirm Called Numbers</h2>
-<p class="center"><b><span id="calledCount">0</span> NUMBERS CALLED</b></p>
-<div class="grid75" id="grid75"></div>
-<p class="muted">Tap any number to correct it before locking the game.</p>
-<h2 style="margin-top:18px">3. Current Pattern</h2>
-<div class="patterns" id="patterns"></div>
-<button class="btn green" id="lockGame">LOCK GAME</button>
-</div>
-</section>
-
-<section id="stepCards" class="hidden">
-<div class="card">
-<div class="row" style="align-items:center"><div><h2>Game Locked</h2><p id="lockedSummary" class="muted"></p></div><span class="badge">LOCKED</span></div>
-</div>
-
-<div class="card">
-<h2>Scan Claimed Card</h2>
-<p class="muted">Use the live camera or choose the saved winning-card photo.</p>
-<div class="camera" id="cardCamWrap"><video id="cardCam" autoplay playsinline muted></video><div class="scanline"></div></div>
-<img id="cardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
-<div class="row">
-<button class="btn dark" id="useCardCamera">USE CAMERA</button>
-<label class="filelabel">CHOOSE PHOTO<input id="cardFile" type="file" accept="image/*"></label>
-</div>
-</div>
-
-<div id="result" class="card hidden"></div>
-</section>
-
-</main>
-<script>
-const demoCalled=[2,4,5,6,8,9,10,12,14,15,17,18,19,22,23,25,26,27,28,29,31,32,34,35,36,38,40,42,47,48,49,51,52,54,55,61,63,64,65,72,75];
-const hardCard=[
- [6,24,40,57,70],
- [11,30,42,51,65],
- [5,17,"FREE",48,62],
- [10,26,31,55,61],
- [12,23,38,56,64]
-];
-const called=new Set(JSON.parse(localStorage.getItem("called")||"[]"));
-let pattern=localStorage.getItem("pattern")||"Any Horizontal Line";
-let locked=localStorage.getItem("locked")==="1";
-let stream=null;
-const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
-
-async function ensureCamera(){
- try{
-   if(!stream) stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
-   boardCam.srcObject=stream; cardCam.srcObject=stream;
-   boardStatus.textContent="Rear camera ready.";
- }catch(e){boardStatus.textContent="Camera unavailable: "+e.message}
-}
-function save(){localStorage.setItem("called",JSON.stringify([...called]));localStorage.setItem("pattern",pattern);localStorage.setItem("locked",locked?"1":"0")}
-function render75(){
- grid75.innerHTML="";
- for(let i=1;i<=75;i++){
-   const b=document.createElement("button");
-   b.className="n "+(called.has(i)?"on":"");
-   b.textContent=i;
-   b.onclick=()=>{called.has(i)?called.delete(i):called.add(i);save();render75()};
-   grid75.appendChild(b);
- }
- calledCount.textContent=called.size;
-}
-function renderPatterns(){
- patterns.innerHTML="";
- pats.forEach(x=>{
-   const b=document.createElement("button");
-   b.className="p "+(pattern===x?"on":"");
-   b.textContent=x;
-   b.onclick=()=>{pattern=x;save();renderPatterns()};
-   patterns.appendChild(b);
- });
-}
-function showMode(){
- stepBoard.classList.toggle("hidden",locked);
- stepCards.classList.toggle("hidden",!locked);
- if(locked) lockedSummary.textContent=pattern+" • "+called.size+" numbers called";
-}
-function resetGame(){
- if(!confirm("Clear the current locked game and start a new game?")) return;
- called.clear(); pattern="Any Horizontal Line"; locked=false; localStorage.clear();
- boardPreview.src=""; cardPreview.src=""; boardPreview.classList.add("hidden");cardPreview.classList.add("hidden");
- boardCamWrap.classList.remove("hidden");cardCamWrap.classList.remove("hidden");
- confirmBoard.classList.add("hidden");result.classList.add("hidden");
- render75();renderPatterns();showMode();
-}
-function loadImage(input,img,camwrap,cb){
- const f=input.files&&input.files[0]; if(!f)return;
- img.src=URL.createObjectURL(f); img.classList.remove("hidden"); camwrap.classList.add("hidden"); cb&&cb();
-}
-function setDemoBoardFromPhoto(){
- called.clear(); demoCalled.forEach(n=>called.add(n));
- pattern="Any Horizontal Line"; save(); render75();renderPatterns();confirmBoard.classList.remove("hidden");
- boardStatus.textContent="Caller-board photo cached for demo. Confirm/correct below.";
-}
-boardFile.onchange=()=>loadImage(boardFile,boardPreview,boardCamWrap,setDemoBoardFromPhoto);
-useBoardCamera.onclick=()=>{boardPreview.classList.add("hidden");boardCamWrap.classList.remove("hidden");confirmBoard.classList.remove("hidden"); if(!called.size){demoCalled.forEach(n=>called.add(n));render75()}};
-lockGame.onclick=()=>{if(!called.size)return alert("Confirm called numbers first.");locked=true;save();showMode()};
-topNew.onclick=resetGame;
-useCardCamera.onclick=()=>{cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden")};
 
 function evaluateCard(){
  // MVP demo evaluation for current hard card and Any Horizontal Line.
