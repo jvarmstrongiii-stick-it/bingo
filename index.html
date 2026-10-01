@@ -45,7 +45,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.3 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.4 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
@@ -256,6 +256,37 @@ $("topNew").onclick=()=>{
  render75();renderPatterns();showMode();status("board","New game. Tap USE CAMERA or choose a photo.");
 };
 render75();renderPatterns();showMode();
+
+$("cardPreview").onclick=e=>{
+ if(busy)return;const rect=$("cardPreview").getBoundingClientRect();
+ if(cropPoints.length===2)cropPoints=[];
+ cropPoints.push([(e.clientX-rect.left)/rect.width,(e.clientY-rect.top)/rect.height]);
+ $("readGrid").disabled=cropPoints.length!==2;
+ $("cropHint").textContent=cropPoints.length===1?"Top-left marked. Tap the bottom-right corner of the number grid.":"Corners marked. Tap READ SELECTED CARD GRID.";
+};
+$("readGrid").onclick=async()=>{
+ if(busy||cropPoints.length!==2)return;
+ const [[x0,y0],[x1,y1]]=cropPoints;
+ if(x1<=x0||y1<=y0){status("card","Mark top-left first, then bottom-right.");return}
+ setBusy(true);$("readGrid").disabled=true;
+ let w;
+ try{
+  const img=$("cardPreview");w=await loadOCR("card");
+  await w.setParameters({tessedit_pageseg_mode:"8",tessedit_char_whitelist:"0123456789"});
+  const draft=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));
+  for(let r=0;r<5;r++)for(let c=0;c<5;c++){
+   if(r===2&&c===2)continue;status("card","Reading cell "+(r*5+c+1)+" of 25…");
+   const cw=(x1-x0)*img.naturalWidth/5,ch=(y1-y0)*img.naturalHeight/5;
+   const canvas=document.createElement("canvas");canvas.width=300;canvas.height=Math.round(300*ch/cw);
+   canvas.getContext("2d").drawImage(img,x0*img.naturalWidth+c*cw+cw*.1,y0*img.naturalHeight+r*ch+ch*.1,cw*.8,ch*.8,0,0,canvas.width,canvas.height);
+   const {data}=await deadline(w.recognize(canvas),20000);const text=data.text.trim(),n=Number(text);
+   if(/^\d{1,2}$/.test(text)&&n>c*15&&n<=(c+1)*15&&data.confidence>=35)draft[r][c]=n;
+  }
+  card=draft;renderCardEditor();status("card",card.flat().filter(Number.isInteger).length+" of 24 numbers read. Check every number against your photo.");
+  $("ocrText").textContent=card.map(row=>row.map(n=>n??"?").join(" ")).join("\n");
+ }catch(e){status("card",e.message+" Enter the numbers manually.");renderCardEditor();if(w){w.terminate();workerPromise=null}}
+ finally{setBusy(false);$("readGrid").disabled=false;if(w&&workerPromise)await w.setParameters({tessedit_pageseg_mode:"11",tessedit_char_whitelist:""})}
+};
 
 </script>
 </body></html>
