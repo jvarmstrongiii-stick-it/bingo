@@ -45,7 +45,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.2 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.3 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
@@ -81,7 +81,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 <h2>Scan Claimed Card</h2>
 <p class="muted">Capture one straight, upright card with B I N G O at the top. Review all 24 numbers below before verifying; ink and glare can hide digits.</p>
 <div class="camera" id="cardCamWrap"><video id="cardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureCard" aria-label="Capture bingo card">CAPTURE</button></div>
-<img id="cardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
+<p id="cropHint" class="muted hidden">Tap the top-left corner of the 5×5 number grid, then its bottom-right corner. Exclude the BINGO heading. Keep the card upright and square.</p><button id="readGrid" class="btn green hidden" disabled>READ SELECTED CARD GRID</button><img id="cardPreview" class="preview hidden" style="height:auto;max-height:none;border-radius:16px;margin-top:10px;cursor:crosshair">
 <div class="row">
 <button class="btn dark" id="useCardCamera">USE CAMERA</button>
 <label class="filelabel">CHOOSE PHOTO<input id="cardFile" type="file" accept="image/*"></label>
@@ -99,6 +99,7 @@ const $=id=>document.getElementById(id);
 const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
 const storageKey="bingo-validator-v2";
 let called=new Set(),pattern=pats[0],locked=false,stream=null,workerPromise=null,busy=false,generation=0;
+let cropPoints=[];
 let card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));
 try{const s=JSON.parse(localStorage.getItem(storageKey)||"null");if(s&&s.confirmed&&pats.includes(s.pattern)&&Array.isArray(s.called)&&s.called.every(n=>Number.isInteger(n)&&n>=1&&n<=75)){called=new Set(s.called);pattern=s.pattern;locked=true}}catch{}
 function save(){try{localStorage.setItem(storageKey,JSON.stringify({called:[...called],pattern,confirmed:locked}))}catch{}}
@@ -124,10 +125,11 @@ async function startCamera(kind){
   status(kind,"Camera started. Frame the "+(kind==="board"?"called-number list":"card")+" and tap CAPTURE.");
  }catch(e){status(kind,"Camera could not start: "+e.message+". Choose a photo or use manual entry.")}
 }
+function deadline(p,ms){return Promise.race([p,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Recognition timed out. Use manual entry or retry.")),ms))])}
 async function loadOCR(kind){
  if(!workerPromise)workerPromise=(async()=>{
   if(!window.Tesseract)await new Promise((resolve,reject)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=resolve;s.onerror=()=>reject(new Error("Recognition library could not load. Check your connection."));document.head.append(s)});
-  const w=await Tesseract.createWorker("eng",1,{logger:m=>{if(busy&&m.status)status(locked?"card":"board","Reading photo: "+m.status+" "+Math.round((m.progress||0)*100)+"%")}});
+  const w=await deadline(Tesseract.createWorker("eng",1,{logger:m=>{if(busy&&m.status)status(locked?"card":"board","Reading photo: "+m.status+" "+Math.round((m.progress||0)*100)+"%")}}),60000);
   await w.setParameters({tessedit_pageseg_mode:"11"});
   return w;
  })().catch(e=>{workerPromise=null;throw e});
@@ -175,7 +177,10 @@ async function acceptPhoto(kind,src){
   const img=$(kind+"Preview");img.src=src;await img.decode();
   img.classList.remove("hidden");$(kind+"CamWrap").classList.add("hidden");
   if(kind==="card"){$("result").classList.add("hidden");$("cardEditor").classList.add("hidden");card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null))}
-  await analyze(kind,img,token);
+  if(kind==="card"){
+   cropPoints=[];$("cropHint").classList.remove("hidden");$("readGrid").classList.remove("hidden");$("readGrid").disabled=true;
+   renderCardEditor();status("card","Photo captured. Mark two opposite corners of the number grid on the photo, then tap READ SELECTED CARD GRID.");
+  }else await analyze(kind,img,token);
  }catch(e){status(kind,"Photo could not load: "+e.message+". Retake or choose a different photo.")}
  finally{if(token===generation)setBusy(false)}
 }
