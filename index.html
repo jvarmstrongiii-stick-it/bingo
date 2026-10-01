@@ -45,7 +45,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.1 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.2 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
@@ -87,7 +87,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 <label class="filelabel">CHOOSE PHOTO<input id="cardFile" type="file" accept="image/*"></label>
 </div><p id="cardStatus" role="status" aria-live="polite" class="muted">Capture a card or enter its numbers.</p><button id="manualCard" class="btn dark">ENTER CARD MANUALLY</button>
 </div>
-<div id="cardEditor" class="card hidden"><h2>Confirm This Card</h2><p class="muted">Read left to right, top to bottom. Correct blanks or wrong numbers using the photo above.</p><div class="bcard" id="cardInputs"></div><label><input type="checkbox" id="cardConfirmed"> I checked every number against this card.</label><button class="btn green" id="verifyCard">VERIFY CONFIRMED CARD</button></div>
+<details class="card"><summary>Recognition text</summary><pre id="ocrText" style="white-space:pre-wrap"></pre></details><div id="cardEditor" class="card hidden"><h2>Confirm This Card</h2><p class="muted">Read left to right, top to bottom. Correct blanks or wrong numbers using the photo above.</p><div class="bcard" id="cardInputs"></div><label><input type="checkbox" id="cardConfirmed"> I checked every number against this card.</label><button class="btn green" id="verifyCard">VERIFY CONFIRMED CARD</button></div>
 
 <div id="result" class="card hidden"></div>
 </section>
@@ -134,7 +134,8 @@ async function loadOCR(kind){
  return workerPromise;
 }
 function numericWords(data){
- return (data.words||[]).map(w=>({n:/^(?:[BINGO]\s*)?(\d{1,2})$/i.exec(w.text.trim()),bbox:w.bbox,confidence:w.confidence}))
+ const words=data.words||data.blocks?.flatMap(b=>b.paragraphs.flatMap(p=>p.lines.flatMap(l=>l.words)))||[];
+ return words.map(w=>({n:/^(?:[BINGO]\s*)?(\d{1,2})$/i.exec(w.text.trim()),bbox:w.bbox,confidence:w.confidence}))
  .filter(w=>w.n&&+w.n[1]>=1&&+w.n[1]<=75).map(w=>({...w,n:+w.n[1]}));
 }
 function cardFromWords(words){
@@ -152,7 +153,7 @@ async function analyze(kind,img,token){
  status(kind,"Photo captured. Starting recognition…");
  try{
   const w=await loadOCR(kind);if(token!==generation)return;
-  const {data}=await w.recognize(img);if(token!==generation)return;
+  const {data}=await w.recognize(img,{}, {text:true,blocks:true});$("ocrText").textContent=data.text||"No text recognized.";if(token!==generation)return;
   const words=numericWords(data);
   if(kind==="board"){
    called=new Set(words.filter(w=>w.confidence>=35).map(w=>w.n));$("boardConfirmed").checked=false;render75();renderPatterns();$("confirmBoard").classList.remove("hidden");
