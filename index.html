@@ -41,31 +41,31 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 .winner{text-align:center;font-size:54px;font-weight:1000;color:#4cff8b;animation:f .55s alternate infinite}
 @keyframes f{to{opacity:.25;transform:scale(1.03)}}
 .loser{text-align:center;font-size:42px;font-weight:1000;color:#ff5260}
-.badge{font-size:12px;padding:6px 10px;border-radius:99px;background:#273347}
+.cellinput{width:100%;min-width:0;padding:12px 2px;text-align:center;font-size:20px;background:#fff;color:#111;border-radius:8px;border:3px solid #687a90}.cellinput:invalid{border-color:#ff5260}.badge{font-size:12px;padding:6px 10px;border-radius:99px;background:#273347}
 </style>
 </head>
 <body>
-<header><b>BINGO VALIDATOR</b><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.1 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
 <div class="card">
 <h2>1. Read Caller Board</h2>
-<p class="muted">Use the live camera or choose a saved photo. For this demo, choosing your saved caller-board photo loads the known called-number state from that game.</p>
+<p class="muted">Tap USE CAMERA, then CAPTURE. Recognition starts after capture; pointing the camera alone does not scan. For TV boards, frame only the called-number list. A screen showing all 75 numbers requires manual correction: OCR cannot tell which numbers are lit.</p>
 <div class="camera" id="boardCamWrap"><video id="boardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureBoard" aria-label="Capture caller board">CAPTURE</button></div>
 <img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
 <div class="row">
 <button class="btn dark" id="useBoardCamera">USE CAMERA</button>
 <label class="filelabel">CHOOSE PHOTO<input id="boardFile" type="file" accept="image/*"></label>
 </div>
-<p id="boardStatus" class="center muted">Rear camera ready.</p><p id="sourceStatus" class="center muted">Caller source: Auto detect</p>
+<p id="boardStatus" class="center muted" role="status" aria-live="polite">Tap USE CAMERA to start, or choose a photo.</p><button class="btn dark" id="manualBoard">ENTER CALLED NUMBERS MANUALLY</button>
 </div>
 
 <div id="confirmBoard" class="card hidden">
 <h2>2. Confirm Called Numbers</h2>
 <p class="center"><b><span id="calledCount">0</span> NUMBERS CALLED</b></p>
 <div class="grid75" id="grid75"></div>
-<p class="muted">Tap any number to correct it before locking the game.</p>
+<p class="muted">White numbers are selected. Compare every number with the caller; tap to correct. Recognition is a draft.</p><label><input type="checkbox" id="boardConfirmed"> I checked the called numbers against the caller.</label>
 <h2 style="margin-top:18px">3. Current Pattern</h2>
 <div class="patterns" id="patterns"></div>
 <button class="btn green" id="lockGame">LOCK GAME</button>
@@ -79,178 +79,177 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 
 <div class="card">
 <h2>Scan Claimed Card</h2>
-<p class="muted">Use the live camera or choose the saved winning-card photo.</p>
+<p class="muted">Capture one straight, upright card with B I N G O at the top. Review all 24 numbers below before verifying; ink and glare can hide digits.</p>
 <div class="camera" id="cardCamWrap"><video id="cardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureCard" aria-label="Capture bingo card">CAPTURE</button></div>
 <img id="cardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
 <div class="row">
 <button class="btn dark" id="useCardCamera">USE CAMERA</button>
 <label class="filelabel">CHOOSE PHOTO<input id="cardFile" type="file" accept="image/*"></label>
+</div><p id="cardStatus" role="status" aria-live="polite" class="muted">Capture a card or enter its numbers.</p><button id="manualCard" class="btn dark">ENTER CARD MANUALLY</button>
 </div>
-</div>
+<div id="cardEditor" class="card hidden"><h2>Confirm This Card</h2><p class="muted">Read left to right, top to bottom. Correct blanks or wrong numbers using the photo above.</p><div class="bcard" id="cardInputs"></div><label><input type="checkbox" id="cardConfirmed"> I checked every number against this card.</label><button class="btn green" id="verifyCard">VERIFY CONFIRMED CARD</button></div>
 
 <div id="result" class="card hidden"></div>
 </section>
 
 </main>
 <script>
-const demoCalled=[2,4,5,6,8,9,10,12,14,15,17,18,19,22,23,25,26,27,28,29,31,32,34,35,36,38,40,42,47,48,49,51,52,54,55,61,63,64,65,72,75];
-const hardCard=[
- [6,24,40,57,70],
- [11,30,42,51,65],
- [5,17,"FREE",48,62],
- [10,26,31,55,61],
- [12,23,38,56,64]
-];
-const called=new Set(JSON.parse(localStorage.getItem("called")||"[]"));
-let pattern=localStorage.getItem("pattern")||"Any Horizontal Line";
-let locked=localStorage.getItem("locked")==="1";
-let stream=null;
-const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
-const CallerSource={DIGITAL:"digital-board",RACK:"physical-rack",MANUAL:"manual"};
-function callerState(sourceType,numbers,confidence=1,uncertainNumbers=[]){
- return {sourceType,calledNumbers:[...numbers].sort((a,b)=>a-b),pattern,confidence,uncertainNumbers};
-}
-function setSource(state){
- sourceStatus.textContent="Caller source: "+state.sourceType+" • "+Math.round(state.confidence*100)+"% confidence";
- called.clear();state.calledNumbers.forEach(n=>called.add(n));save();render75();renderPatterns();confirmBoard.classList.remove("hidden");
-}
-function rackNumber(col,row){return col*15+row+1}
-// Calibration profile from the first real physical rack captured 2026-09-26.
-// Coordinates are normalized to the source image and bilinearly interpolated.
-const rackProfile={tl:[.326,.077],tr:[.568,.077],bl:[.365,.615],br:[.654,.604]};
-function mix(a,b,t){return a+(b-a)*t}
-function rackPoint(col,row){
- const u=col/4,v=row/14;
- const lx=mix(rackProfile.tl[0],rackProfile.bl[0],v),ly=mix(rackProfile.tl[1],rackProfile.bl[1],v);
- const rx=mix(rackProfile.tr[0],rackProfile.br[0],v),ry=mix(rackProfile.tr[1],rackProfile.br[1],v);
- return [mix(lx,rx,u),mix(ly,ry,u)];
-}
-function analyzePhysicalRack(img){
- const c=document.createElement("canvas"),w=600,h=Math.round(600*img.naturalHeight/img.naturalWidth);
- c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});x.drawImage(img,0,0,w,h);
- const d=x.getImageData(0,0,w,h).data, occupied=[],uncertain=[];
- function lum(px,py,r){
-  let sum=0,n=0,sat=0;
-  for(let yy=Math.max(0,py-r);yy<Math.min(h,py+r);yy+=3)for(let xx=Math.max(0,px-r);xx<Math.min(w,px+r);xx+=3){
-   const i=(yy*w+xx)*4,R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B);
-   sum+=(R+G+B)/3;sat+=mx-mn;n++;
-  } return [sum/n,sat/n];
- }
- for(let col=0;col<5;col++)for(let row=0;row<15;row++){
-  const [nx,ny]=rackPoint(col,row),px=Math.round(nx*w),py=Math.round(ny*h);
-  const [center,cs]=lum(px,py,11),[ring,rs]=lum(px,py,22);
-  const score=(center-ring)+cs*.22;
-  const num=rackNumber(col,row);
-  if(score>18) occupied.push(num); else if(score>9) uncertain.push(num);
- }
- const confidence=Math.max(.55,1-uncertain.length/30);
- return callerState(CallerSource.RACK,occupied,confidence,uncertain);
-}
-function analyzeCallerPhoto(img){
- // Current calibrated detector targets the physical 5x15 rack. All results remain
- // editable in the 1-75 confirmation grid before the game can be locked.
- return analyzePhysicalRack(img);
-}
 
-async function ensureCamera(){
- try{
-   if(!stream) stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
-   boardCam.srcObject=stream; cardCam.srcObject=stream;
-   boardStatus.textContent="Rear camera ready.";
- }catch(e){boardStatus.textContent="Camera unavailable: "+e.message}
-}
-function save(){localStorage.setItem("called",JSON.stringify([...called]));localStorage.setItem("pattern",pattern);localStorage.setItem("locked",locked?"1":"0")}
+const $=id=>document.getElementById(id);
+const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
+const storageKey="bingo-validator-v2";
+let called=new Set(),pattern=pats[0],locked=false,stream=null,workerPromise=null,busy=false,generation=0;
+let card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));
+try{const s=JSON.parse(localStorage.getItem(storageKey)||"null");if(s&&s.confirmed&&pats.includes(s.pattern)&&Array.isArray(s.called)&&s.called.every(n=>Number.isInteger(n)&&n>=1&&n<=75)){called=new Set(s.called);pattern=s.pattern;locked=true}}catch{}
+function save(){try{localStorage.setItem(storageKey,JSON.stringify({called:[...called],pattern,confirmed:locked}))}catch{}}
 function render75(){
- grid75.innerHTML="";
- for(let i=1;i<=75;i++){
-   const b=document.createElement("button");
-   b.className="n "+(called.has(i)?"on":"");
-   b.textContent=i;
-   b.onclick=()=>{called.has(i)?called.delete(i):called.add(i);save();render75()};
-   grid75.appendChild(b);
- }
- calledCount.textContent=called.size;
+ $("grid75").replaceChildren();
+ for(let n=1;n<=75;n++){const b=document.createElement("button");b.className="n "+(called.has(n)?"on":"");b.textContent=n;b.setAttribute("aria-pressed",String(called.has(n)));b.onclick=()=>{called.has(n)?called.delete(n):called.add(n);$("boardConfirmed").checked=false;render75()};$("grid75").append(b)}
+ $("calledCount").textContent=called.size;
 }
 function renderPatterns(){
- patterns.innerHTML="";
- pats.forEach(x=>{
-   const b=document.createElement("button");
-   b.className="p "+(pattern===x?"on":"");
-   b.textContent=x;
-   b.onclick=()=>{pattern=x;save();renderPatterns()};
-   patterns.appendChild(b);
- });
+ $("patterns").replaceChildren();
+ pats.forEach(p=>{const b=document.createElement("button");b.className="p "+(pattern===p?"on":"");b.textContent=p;b.onclick=()=>{pattern=p;renderPatterns()};$("patterns").append(b)})
 }
-function showMode(){
- stepBoard.classList.toggle("hidden",locked);
- stepCards.classList.toggle("hidden",!locked);
- if(locked) lockedSummary.textContent=pattern+" • "+called.size+" numbers called";
+function showMode(){$("stepBoard").classList.toggle("hidden",locked);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=pattern+" • "+called.size+" confirmed numbers"}
+function status(kind,text){$(kind+"Status").textContent=text}
+function setBusy(value){busy=value;["captureBoard","captureCard","boardFile","cardFile","lockGame","verifyCard","useBoardCamera","useCardCamera","manualBoard","manualCard"].forEach(id=>$(id).disabled=value)}
+async function startCamera(kind){
+ try{
+  if(!stream||!stream.getVideoTracks().some(t=>t.readyState==="live"))stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+  // Attach only to the visible video; sharing one stream across two videos can
+  // leave a mobile browser displaying a paused preview.
+  const v=$(kind+"Cam");v.srcObject=stream;await v.play();
+  $(kind+"Preview").classList.add("hidden");$(kind+"CamWrap").classList.remove("hidden");
+  status(kind,"Camera started. Frame the "+(kind==="board"?"called-number list":"card")+" and tap CAPTURE.");
+ }catch(e){status(kind,"Camera could not start: "+e.message+". Choose a photo or use manual entry.")}
 }
-function resetGame(){
- if(!confirm("Clear the current locked game and start a new game?")) return;
- called.clear(); pattern="Any Horizontal Line"; locked=false; localStorage.clear();
- boardPreview.src=""; cardPreview.src=""; boardPreview.classList.add("hidden");cardPreview.classList.add("hidden");
- boardCamWrap.classList.remove("hidden");cardCamWrap.classList.remove("hidden");
- confirmBoard.classList.add("hidden");result.classList.add("hidden");
- render75();renderPatterns();showMode();
+async function loadOCR(kind){
+ if(!workerPromise)workerPromise=(async()=>{
+  if(!window.Tesseract)await new Promise((resolve,reject)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=resolve;s.onerror=()=>reject(new Error("Recognition library could not load. Check your connection."));document.head.append(s)});
+  const w=await Tesseract.createWorker("eng",1,{logger:m=>{if(busy&&m.status)status(locked?"card":"board","Reading photo: "+m.status+" "+Math.round((m.progress||0)*100)+"%")}});
+  await w.setParameters({tessedit_pageseg_mode:"11"});
+  return w;
+ })().catch(e=>{workerPromise=null;throw e});
+ return workerPromise;
 }
-function loadImage(input,img,camwrap,cb){
- const f=input.files&&input.files[0]; if(!f)return;
- img.src=URL.createObjectURL(f); img.classList.remove("hidden"); camwrap.classList.add("hidden"); cb&&cb();
+function numericWords(data){
+ return (data.words||[]).map(w=>({n:/^(?:[BINGO]\s*)?(\d{1,2})$/i.exec(w.text.trim()),bbox:w.bbox,confidence:w.confidence}))
+ .filter(w=>w.n&&+w.n[1]>=1&&+w.n[1]<=75).map(w=>({...w,n:+w.n[1]}));
 }
-function setDemoBoardFromPhoto(){
- if(!boardPreview.complete||!boardPreview.naturalWidth)return;
- const state=analyzeCallerPhoto(boardPreview);setSource(state);
- boardStatus.textContent="Physical rack analyzed: "+state.calledNumbers.length+" occupied; "+state.uncertainNumbers.length+" uncertain. Confirm/correct below.";
+function cardFromWords(words){
+ const out=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));
+ // B-I-N-G-O column ranges identify column membership. Infer rows from each
+ // column's vertical order only if exactly five entries (four for N) exist.
+ // Missing or extra OCR tokens leave that column blank for manual review.
+ for(let c=0;c<5;c++){
+  const list=words.filter(w=>w.n>c*15&&w.n<=(c+1)*15&&w.confidence>=35).sort((a,b)=>a.bbox.y0-b.bbox.y0);
+  if(list.length!==(c===2?4:5))continue;
+  list.forEach((w,i)=>{out[c===2&&i>=2?i+1:i][c]=w.n})
+ }return out;
 }
-boardFile.onchange=()=>loadImage(boardFile,boardPreview,boardCamWrap,setDemoBoardFromPhoto);
-function captureFrame(video,img,camwrap,cb){
- const c=document.createElement("canvas");
- if(!video.videoWidth||!video.videoHeight){alert("Camera is still starting. Try again in a second.");return}
- c.width=video.videoWidth;c.height=video.videoHeight;
- c.getContext("2d").drawImage(video,0,0,c.width,c.height);
- img.src=c.toDataURL("image/jpeg",.92);
- img.classList.remove("hidden");camwrap.classList.add("hidden");
- cb&&cb();
-}
-useBoardCamera.onclick=()=>{boardPreview.classList.add("hidden");boardCamWrap.classList.remove("hidden")};
-captureBoard.onclick=()=>captureFrame(boardCam,boardPreview,boardCamWrap,setDemoBoardFromPhoto);
-lockGame.onclick=()=>{if(!called.size)return alert("Confirm called numbers first.");locked=true;save();showMode()};
-topNew.onclick=resetGame;
-useCardCamera.onclick=()=>{cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden")};
-captureCard.onclick=()=>captureFrame(cardCam,cardPreview,cardCamWrap,evaluateCard);
-
-function evaluateCard(){
- // MVP demo evaluation for current hard card and Any Horizontal Line.
- const wins=[];
- for(let r=0;r<5;r++){
-   if(hardCard[r].every(v=>v==="FREE"||called.has(v))) wins.push(r);
+async function analyze(kind,img,token){
+ status(kind,"Photo captured. Starting recognition…");
+ try{
+  const w=await loadOCR(kind);if(token!==generation)return;
+  const {data}=await w.recognize(img);if(token!==generation)return;
+  const words=numericWords(data);
+  if(kind==="board"){
+   called=new Set(words.filter(w=>w.confidence>=35).map(w=>w.n));$("boardConfirmed").checked=false;render75();renderPatterns();$("confirmBoard").classList.remove("hidden");
+   status(kind,called.size+" candidate numbers read. OCR reads visible digits, not the called/un-called light state. Correct the grid against the TV before locking.");
+  }else{
+   card=cardFromWords(words);renderCardEditor();
+   const count=card.flat().filter(n=>Number.isInteger(n)).length;
+   status(kind,count+" of 24 numbers filled. Compare every cell with your photo; fill blanks and fix mistakes before verifying.");
+  }
+ }catch(e){
+  if(token!==generation)return;
+  status(kind,"Could not read photo: "+e.message+". You can enter the numbers manually.");
+  if(kind==="board"){$("confirmBoard").classList.remove("hidden");render75();renderPatterns()}else renderCardEditor();
  }
- let closest=0,best=-1;
- for(let r=0;r<5;r++){
-   const score=hardCard[r].filter(v=>v==="FREE"||called.has(v)).length;
-   if(score>best){best=score;closest=r}
- }
- const isWinner=wins.length>0;
- result.classList.remove("hidden");
- result.innerHTML=`<div class="${isWinner?"winner":"loser"}">${isWinner?"✓ BINGO!":"NO BINGO"}</div>
- <p class="center"><b>${pattern}</b></p>
- <div class="bcard">${hardCard.flatMap((row,r)=>row.map(v=>{
-   const req=isWinner?wins.includes(r):r===closest;
-   const ok=v==="FREE"||called.has(v);
-   return `<div class="cell ${req?(ok?"good":"bad"):""}">${v}</div>`;
- })).join("")}</div>
- <p class="center"><b>${isWinner?"10 • 26 • 31 • 55 • 61":"Closest attempted line shown above"}</b></p>
- ${isWinner?'<button class="btn green" onclick="alert(\'Winner photo flow is next.\')">TAKE WINNER PHOTO</button>':''}
- <button class="btn dark" id="nextCardBtn">SCAN / UPLOAD NEXT CARD</button>`;
- document.getElementById("nextCardBtn").onclick=()=>{
-   result.classList.add("hidden");cardPreview.classList.add("hidden");cardCamWrap.classList.remove("hidden");cardFile.value="";
-   document.querySelector("#stepCards .card:nth-child(2)").scrollIntoView({behavior:"smooth"});
- };
- setTimeout(()=>result.scrollIntoView({behavior:"smooth"}),120);
 }
-cardFile.onchange=()=>loadImage(cardFile,cardPreview,cardCamWrap,evaluateCard);
+async function acceptPhoto(kind,src){
+ if(busy)return;setBusy(true);const token=++generation;
+ try{
+  const img=$(kind+"Preview");img.src=src;await img.decode();
+  img.classList.remove("hidden");$(kind+"CamWrap").classList.add("hidden");
+  if(kind==="card"){$("result").classList.add("hidden");$("cardEditor").classList.add("hidden");card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null))}
+  await analyze(kind,img,token);
+ }catch(e){status(kind,"Photo could not load: "+e.message+". Retake or choose a different photo.")}
+ finally{if(token===generation)setBusy(false)}
+}
+function capture(kind){
+ const v=$(kind+"Cam");
+ if(!v.videoWidth||!v.videoHeight){status(kind,"No camera frame yet. Tap USE CAMERA and allow access, then tap CAPTURE.");return}
+ const c=document.createElement("canvas"),scale=Math.min(1,1800/v.videoWidth);c.width=Math.round(v.videoWidth*scale);c.height=Math.round(v.videoHeight*scale);c.getContext("2d").drawImage(v,0,0,c.width,c.height);acceptPhoto(kind,c.toDataURL("image/jpeg",.95));
+}
+function renderCardEditor(){
+ $("cardInputs").replaceChildren();$("cardConfirmed").checked=false;$("cardEditor").classList.remove("hidden");$("result").classList.add("hidden");
+ for(let r=0;r<5;r++)for(let c=0;c<5;c++){
+  if(r===2&&c===2){const f=document.createElement("div");f.className="cell";f.textContent="FREE";$("cardInputs").append(f);continue}
+  const input=document.createElement("input");input.type="number";input.inputMode="numeric";input.min=c*15+1;input.max=(c+1)*15;input.required=true;input.className="cellinput";input.value=card[r][c]??"";input.setAttribute("aria-label","Row "+(r+1)+", "+["B","I","N","G","O"][c]);input.dataset.row=r;input.dataset.col=c;input.oninput=()=>{$("cardConfirmed").checked=false;$("result").classList.add("hidden")};$("cardInputs").append(input);
+ }
+}
+function readCard(){
+ const values=Array.from({length:5},()=>Array(5).fill(null));values[2][2]="FREE";const seen=new Set();
+ for(const input of $("cardInputs").querySelectorAll("input")){
+  const n=Number(input.value),c=Number(input.dataset.col),r=Number(input.dataset.row);
+  if(input.value.trim()===""||!Number.isInteger(n)||n<c*15+1||n>(c+1)*15||seen.has(n)){input.focus();throw new Error("Each cell needs a unique number in its B-I-N-G-O range. Check row "+(r+1)+", column "+(c+1)+".")}
+  seen.add(n);values[r][c]=n;
+ }return values;
+}
+function patternLines(p){
+ const rows=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>[r,c]));
+ const cols=Array.from({length:5},(_,c)=>Array.from({length:5},(_,r)=>[r,c]));
+ const diagonals=[Array.from({length:5},(_,i)=>[i,i]),Array.from({length:5},(_,i)=>[i,4-i])];
+ if(p===pats[0])return rows;if(p===pats[1])return cols;if(p===pats[2])return diagonals;
+ if(p===pats[3])return [[[0,0],[0,4],[4,0],[4,4]]];
+ if(p===pats[4])return [[...diagonals[0],...diagonals[1].filter(([r])=>r!==2)]];
+ if(p===pats[5])return [rows.flat()];throw new Error("Unknown pattern");
+}
+function evaluate(values,numbers,p){
+ const lines=patternLines(p),hit=([r,c])=>values[r][c]==="FREE"||numbers.has(values[r][c]);
+ const winners=lines.filter(line=>line.every(hit));
+ const closest=[...lines].sort((a,b)=>b.filter(hit).length-a.filter(hit).length)[0];
+ return {winner:winners.length>0,required:winners.length?winners.flat():closest,missing:closest.filter(pos=>!hit(pos)).map(([r,c])=>values[r][c])};
+}
+function verify(){
+ try{
+  if(!locked)throw new Error("Confirm and lock the caller numbers first.");
+  const values=readCard();if(!$("cardConfirmed").checked)throw new Error("Check every number against the photo, then tick the confirmation box.");
+  const verdict=evaluate(values,called,pattern);card=values;
+  $("result").replaceChildren();
+  const title=document.createElement("div");title.className=verdict.winner?"winner":"loser";title.textContent=verdict.winner?"✓ BINGO!":"NO BINGO";$("result").append(title);
+  const note=document.createElement("p");note.className="center";note.textContent=pattern+" — based on the numbers you confirmed."; $("result").append(note);
+  const grid=document.createElement("div");grid.className="bcard";
+  for(let r=0;r<5;r++)for(let c=0;c<5;c++){const cell=document.createElement("div");const req=verdict.required.some(([rr,cc])=>rr===r&&cc===c),ok=values[r][c]==="FREE"||called.has(values[r][c]);cell.className="cell "+(req?(ok?"good":"bad"):"");cell.textContent=values[r][c];grid.append(cell)}
+  $("result").append(grid);
+  if(!verdict.winner){const missing=document.createElement("p");missing.textContent="Closest pattern is missing: "+verdict.missing.join(", ");$("result").append(missing)}
+  const next=document.createElement("button");next.className="btn dark";next.textContent="SCAN NEXT CARD";next.onclick=()=>{$("result").classList.add("hidden");$("cardEditor").classList.add("hidden");$("cardPreview").classList.add("hidden");$("cardFile").value="";startCamera("card")};$("result").append(next);$("result").classList.remove("hidden");$("result").scrollIntoView({behavior:"smooth"});
+ }catch(e){status("card",e.message)}
+}
+["board","card"].forEach(kind=>{
+ $("use"+(kind==="board"?"Board":"Card")+"Camera").onclick=()=>startCamera(kind);
+ $("capture"+(kind==="board"?"Board":"Card")).onclick=()=>capture(kind);
+ $(kind+"File").onchange=async()=>{const f=$(kind+"File").files[0];if(!f)return;const url=URL.createObjectURL(f);try{await acceptPhoto(kind,url)}finally{URL.revokeObjectURL(url);$(kind+"File").value=""}};
+});
+$("manualBoard").onclick=()=>{$("confirmBoard").classList.remove("hidden");render75();renderPatterns();status("board","Tap the numbers actually called, select the pattern, then confirm.")};
+$("manualCard").onclick=()=>{card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));renderCardEditor()};
+$("lockGame").onclick=()=>{
+ if(!called.size||!$("boardConfirmed").checked){status("board","Select the called numbers and tick the confirmation box before locking.");return}
+ locked=true;save();showMode();status("card","Tap USE CAMERA, then CAPTURE; or choose a photo.");
+};
+$("verifyCard").onclick=verify;
+$("topNew").onclick=()=>{
+ if(busy){status(locked?"card":"board","Wait for recognition to finish before starting a new game.");return}
+ if(!confirm("Clear this game and start a new game?"))return;
+ called.clear();pattern=pats[0];locked=false;generation++;try{localStorage.removeItem(storageKey)}catch{}
+ ["board","card"].forEach(k=>{$(k+"Preview").classList.add("hidden");$(k+"CamWrap").classList.remove("hidden");$(k+"File").value=""});
+ $("confirmBoard").classList.add("hidden");$("cardEditor").classList.add("hidden");$("result").classList.add("hidden");$("boardConfirmed").checked=false;
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+ render75();renderPatterns();showMode();status("board","New game. Tap USE CAMERA or choose a photo.");
+};
+render75();renderPatterns();showMode();
 
-render75();renderPatterns();showMode();ensureCamera();
 </script>
 </body></html>
