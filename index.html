@@ -45,7 +45,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.4 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.01.5 · photo OCR + confirmation</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
@@ -96,7 +96,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 <script>
 
 const $=id=>document.getElementById(id);
-const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall"];
+const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall","Center 3×3 Square"];
 const storageKey="bingo-validator-v2";
 let called=new Set(),pattern=pats[0],locked=false,stream=null,workerPromise=null,busy=false,generation=0;
 let cropPoints=[];
@@ -211,7 +211,7 @@ function patternLines(p){
  if(p===pats[0])return rows;if(p===pats[1])return cols;if(p===pats[2])return diagonals;
  if(p===pats[3])return [[[0,0],[0,4],[4,0],[4,4]]];
  if(p===pats[4])return [[...diagonals[0],...diagonals[1].filter(([r])=>r!==2)]];
- if(p===pats[5])return [rows.flat()];throw new Error("Unknown pattern");
+ if(p===pats[5])return [rows.flat()];if(p===pats[6])return [rows.slice(1,4).map(row=>row.slice(1,4)).flat()];throw new Error("Unknown pattern");
 }
 function evaluate(values,numbers,p){
  const lines=patternLines(p),hit=([r,c])=>values[r][c]==="FREE"||numbers.has(values[r][c]);
