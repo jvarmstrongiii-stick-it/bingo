@@ -47,7 +47,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.07.3 · visual board capture</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.07.4 · camera hotfix</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
@@ -126,7 +126,8 @@ async function startCamera(kind){
   // leave a mobile browser displaying a paused preview.
   const v=$(kind+"Cam");v.srcObject=stream;await v.play();
   $(kind+"Preview").classList.add("hidden");$(kind+"CamWrap").classList.remove("hidden");
-  status(kind,"Camera started. Frame the "+(kind==="board"?"called-number list":"card")+" and tap CAPTURE.");\n  if(kind==="board")await setupBoardZoom();
+  status(kind,"Camera started. Frame the "+(kind==="board"?"called-number list":"card")+" and tap CAPTURE.");
+  if(kind==="board")await setupBoardZoom();
  }catch(e){status(kind,"Camera could not start: "+e.message+". Choose a photo or use manual entry.")}
 }
 async function setupBoardZoom(){
