@@ -217,7 +217,8 @@ $("boardPreview").onclick=e=>{
  status("board",boardCropPoints.length===1?"Now tap the BOTTOM-RIGHT cell.":"Corners selected. Tap READ 75-CELL BOARD.");
 };
 $("readBoardGrid").onclick=()=>{
- if(boardCropPoints.length!==2)return;
+ status("board","Reading 75-cell board…");
+ if(boardCropPoints.length!==2){status("board","Tap the top-left and bottom-right cells first.");return;}
  const img=$("boardPreview"),c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;const ctx=c.getContext("2d");ctx.drawImage(img,0,0);
  let [[x1,y1],[x2,y2]]=boardCropPoints;x1*=c.width;x2*=c.width;y1*=c.height;y2*=c.height;if(x2<x1)[x1,x2]=[x2,x1];if(y2<y1)[y1,y2]=[y2,y1];
  const data=ctx.getImageData(0,0,c.width,c.height).data,scores=[];
