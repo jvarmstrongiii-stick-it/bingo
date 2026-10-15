@@ -47,7 +47,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.07.7 · syntax-verified</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.15.1 · syntax-verified</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepBoard">
@@ -55,7 +55,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 <h2>1. Read Caller Board</h2>
 <p class="muted">Tap USE CAMERA, zoom onto the caller display, then CAPTURE. For a 75-number TV board, mark the top-left and bottom-right corners of the number grid; the app will compare the 75 fixed cells visually. Review the result before locking.</p>
 <div class="camera" id="boardCamWrap"><video id="boardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureBoard" aria-label="Capture caller board">CAPTURE</button></div>
-<img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px">
+<div style="position:relative"><img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px"><canvas id="boardMarks" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div>
 <p id="boardCropHint" class="muted hidden">Tap the TOP-LEFT cell, then the BOTTOM-RIGHT cell of the 75-number grid.</p><button id="readBoardGrid" class="btn green hidden" disabled>READ 75-CELL BOARD</button>
 <div id="boardZoomRow" class="zoomrow hidden"><label for="boardZoom"><b>ZOOM</b></label><input id="boardZoom" type="range" min="1" max="4" step="0.1" value="2"><output id="boardZoomValue">2.0×</output></div>
 <div class="row">
@@ -125,7 +125,7 @@ async function startCamera(kind){
   // Attach only to the visible video; sharing one stream across two videos can
   // leave a mobile browser displaying a paused preview.
   const v=$(kind+"Cam");v.srcObject=stream;await v.play();
-  $(kind+"Preview").classList.add("hidden");$(kind+"CamWrap").classList.remove("hidden");
+  $(kind+"Preview").classList.add("hidden");$(kind+"CamWrap").classList.remove("hidden");drawBoardMarks();
   status(kind,"Camera started. Frame the "+(kind==="board"?"called-number list":"card")+" and tap CAPTURE.");
   if(kind==="board")await setupBoardZoom();
  }catch(e){status(kind,"Camera could not start: "+e.message+". Choose a photo or use manual entry.")}
@@ -199,7 +199,7 @@ async function acceptPhoto(kind,src){
    cropPoints=[];$("cropHint").classList.remove("hidden");$("readGrid").classList.remove("hidden");$("readGrid").disabled=true;
    renderCardEditor();status("card","Photo captured. Mark two opposite corners of the number grid on the photo, then tap READ SELECTED CARD GRID.");
   }else{
-   boardCropPoints=[];$("boardCropHint").classList.remove("hidden");$("readBoardGrid").classList.remove("hidden");$("readBoardGrid").disabled=true;
+   boardCropPoints=[];drawBoardMarks();$("boardCropHint").classList.remove("hidden");$("readBoardGrid").classList.remove("hidden");$("readBoardGrid").disabled=false;
    status("board","Photo captured. Tap the top-left and bottom-right corners of the 75-number grid.");
   }
  }catch(e){status(kind,"Photo could not load: "+e.message+". Retake or choose a different photo.")}
@@ -211,10 +211,36 @@ function capture(kind){
  const c=document.createElement("canvas"),scale=Math.min(1,1800/v.videoWidth);c.width=Math.round(v.videoWidth*scale);c.height=Math.round(v.videoHeight*scale);c.getContext("2d").drawImage(v,0,0,c.width,c.height);acceptPhoto(kind,c.toDataURL("image/jpeg",.95));
 }
 let boardCropPoints=[];
+// The preview is shown "contain" (letterboxed), so map the tap onto the photo itself, not the box around it.
+function photoPoint(img,e){
+ const r=img.getBoundingClientRect(),iw=img.naturalWidth,ih=img.naturalHeight,s=Math.min(r.width/iw,r.height/ih),w=iw*s,h=ih*s;
+ return [(e.clientX-r.left-(r.width-w)/2)/w,(e.clientY-r.top-(r.height-h)/2)/h];
+}
+// Where each of the 75 numbers will be read, as fractions of the photo. Shown on the photo so a misplaced tap is obvious.
+function boardCells(){
+ if(boardCropPoints.length!==2)return[];
+ const [[a,b],[c2,d]]=boardCropPoints,x1=Math.min(a,c2),x2=Math.max(a,c2),y1=Math.min(b,d),y2=Math.max(b,d),img=$("boardPreview");
+ const wide=(x2-x1)*img.naturalWidth>(y2-y1)*img.naturalHeight,ROWS=wide?5:15,COLS=wide?15:5,out=[];
+ for(let row=0;row<ROWS;row++)for(let col=0;col<COLS;col++)out.push({num:wide?row*15+col+1:col*15+row+1,x:x1+(x2-x1)*col/(COLS-1),y:y1+(y2-y1)*row/(ROWS-1)});
+ return out;
+}
+function drawBoardMarks(lit){
+ const img=$("boardPreview"),cv=$("boardMarks");
+ if(img.classList.contains("hidden")||!img.naturalWidth){cv.width=0;return}
+ const r=img.getBoundingClientRect(),pr=img.parentElement.getBoundingClientRect(),s=Math.min(r.width/img.naturalWidth,r.height/img.naturalHeight),w=img.naturalWidth*s,h=img.naturalHeight*s;
+ cv.style.left=(r.left-pr.left)+"px";cv.style.top=(r.top-pr.top)+"px";cv.style.width=r.width+"px";cv.style.height=r.height+"px";
+ const dpr=window.devicePixelRatio||1;cv.width=r.width*dpr;cv.height=r.height*dpr;const g=cv.getContext("2d");g.scale(dpr,dpr);
+ const ox=(r.width-w)/2,oy=(r.height-h)/2,cells=boardCells();
+ cells.forEach(o=>{const on=lit&&lit.has(o.num);g.beginPath();g.arc(ox+o.x*w,oy+o.y*h,on?4:2.5,0,7);g.fillStyle=on?"#3ddc84":"#ff3b30";g.fill()});
+ if(!cells.length)boardCropPoints.forEach(([x,y])=>{g.beginPath();g.arc(ox+x*w,oy+y*h,6,0,7);g.strokeStyle="#ff3b30";g.lineWidth=2;g.stroke()});
+}
+window.addEventListener("resize",()=>drawBoardMarks());
 $("boardPreview").onclick=e=>{
- const img=$("boardPreview"),r=img.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
- if(boardCropPoints.length>=2)boardCropPoints=[];boardCropPoints.push([x,y]);$("readBoardGrid").disabled=boardCropPoints.length!==2;
- status("board",boardCropPoints.length===1?"Now tap the BOTTOM-RIGHT cell.":"Corners selected. Tap READ 75-CELL BOARD.");
+ const [x,y]=photoPoint($("boardPreview"),e);
+ if(x<0||x>1||y<0||y>1){status("board","That tap was outside the photo. Tap on the number grid itself.");return;}
+ if(boardCropPoints.length>=2)boardCropPoints=[];boardCropPoints.push([x,y]);
+ drawBoardMarks();
+ status("board",boardCropPoints.length===1?"Now tap the BOTTOM-RIGHT cell.":"Check the red dots sit on the numbers (tap the corners again if not), then tap READ 75-CELL BOARD.");
 };
 $("readBoardGrid").onclick=()=>{
  status("board","Reading 75-cell board…");
@@ -222,17 +248,24 @@ $("readBoardGrid").onclick=()=>{
  const img=$("boardPreview"),c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;const ctx=c.getContext("2d");ctx.drawImage(img,0,0);
  let [[x1,y1],[x2,y2]]=boardCropPoints;x1*=c.width;x2*=c.width;y1*=c.height;y2*=c.height;if(x2<x1)[x1,x2]=[x2,x1];if(y2<y1)[y1,y2]=[y2,y1];
  const data=ctx.getImageData(0,0,c.width,c.height).data,scores=[];
- for(let row=0;row<15;row++)for(let col=0;col<5;col++){
-  const cx=x1+(x2-x1)*col/4,cy=y1+(y2-y1)*row/14,rx=Math.max(2,(x2-x1)/5*.22),ry=Math.max(2,(y2-y1)/15*.28);
-  let bright=0,sat=0,n=0;
-  for(let yy=Math.max(0,cy-ry);yy<Math.min(c.height,cy+ry);yy+=2)for(let xx=Math.max(0,cx-rx);xx<Math.min(c.width,cx+rx);xx+=2){
-   const i=(Math.floor(yy)*c.width+Math.floor(xx))*4,r=data[i],g=data[i+1],b=data[i+2],mx=Math.max(r,g,b),mn=Math.min(r,g,b);bright+=(r+g+b)/3;sat+=mx-mn;n++;
+ // TV boards are either 5 rows of 15 (1-15 across the top, like most bar boards) or 15 rows of 5 (a B-I-N-G-O column each).
+ const wide=(x2-x1)>(y2-y1),ROWS=wide?5:15,COLS=wide?15:5;
+ for(let row=0;row<ROWS;row++)for(let col=0;col<COLS;col++){
+  // Sample a box around each cell, kept inside the tapped corners so the board's edge (often a white bar) is never read as a number.
+  const cx=x1+(x2-x1)*col/(COLS-1),cy=y1+(y2-y1)*row/(ROWS-1),rx=Math.max(2,(x2-x1)/(COLS-1)*.5),ry=Math.max(2,(y2-y1)/(ROWS-1)*.5),v=[];
+  for(let yy=Math.max(0,y1-ry/2,cy-ry);yy<Math.min(c.height,y2+ry/2,cy+ry);yy++)for(let xx=Math.max(0,x1-rx/2,cx-rx);xx<Math.min(c.width,x2+rx/2,cx+rx);xx++){
+   const i=(Math.floor(yy)*c.width+Math.floor(xx))*4;v.push(Math.min(data[i],data[i+1],data[i+2]));
   }
-  scores.push({num:col*15+row+1,score:bright/n+(sat/n)*.35});
+  // Lit numbers are drawn in white; unlit ones are dim or tinted. Score = how white the brightest bits of the cell are.
+  v.sort((a,b)=>a-b);const score=v.length?v[Math.floor(v.length*.95)]:NaN;
+  scores.push({num:wide?row*15+col+1:col*15+row+1,score});
  }
  if(!scores.length||scores.some(o=>!Number.isFinite(o.score))){status("board","Could not sample the selected grid. Retake the photo and mark the first and last NUMBER cells.");return;}
- const vals=scores.map(o=>o.score).sort((a,b)=>a-b),lo=vals[Math.floor(vals.length*.25)],hi=vals[Math.floor(vals.length*.75)],threshold=(lo+hi)/2;
- called=new Set(scores.filter(o=>o.score>threshold).map(o=>o.num));$("boardConfirmed").checked=false;render75();renderPatterns();$("confirmBoard").classList.remove("hidden");
+ // Lit (called) cells are much whiter than unlit ones: split at the biggest jump in brightness.
+ const vals=scores.map(o=>o.score).sort((a,b)=>a-b);let gap=0,threshold=Infinity;
+ for(let i=1;i<vals.length;i++){if(vals[i]-vals[i-1]>gap){gap=vals[i]-vals[i-1];threshold=(vals[i]+vals[i-1])/2}}
+ if(gap<20){status("board","Couldn't tell lit numbers from unlit ones. Get closer, avoid glare, retake, or enter the numbers manually.");return;}
+ called=new Set(scores.filter(o=>o.score>threshold).map(o=>o.num));drawBoardMarks(called);$("boardConfirmed").checked=false;render75();renderPatterns();$("confirmBoard").classList.remove("hidden");
  status("board",called.size+" visually active cells detected. Review the 75-number grid and correct any misses before locking.");
 };
 function renderCardEditor(){
@@ -296,7 +329,7 @@ $("topNew").onclick=()=>{
  if(busy){status(locked?"card":"board","Wait for recognition to finish before starting a new game.");return}
  if(!confirm("Clear this game and start a new game?"))return;
  called.clear();pattern=pats[0];locked=false;generation++;try{localStorage.removeItem(storageKey)}catch{}
- ["board","card"].forEach(k=>{$(k+"Preview").classList.add("hidden");$(k+"CamWrap").classList.remove("hidden");$(k+"File").value=""});
+ ["board","card"].forEach(k=>{$(k+"Preview").classList.add("hidden");$(k+"CamWrap").classList.remove("hidden");$(k+"File").value=""});drawBoardMarks();
  $("confirmBoard").classList.add("hidden");$("cardEditor").classList.add("hidden");$("result").classList.add("hidden");$("boardConfirmed").checked=false;
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
  render75();renderPatterns();showMode();status("board","New game. Tap USE CAMERA or choose a photo.");
