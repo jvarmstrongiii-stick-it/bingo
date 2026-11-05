@@ -47,10 +47,10 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.13 · improved TV detection</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.14 · regular bingo</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
-<section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></section><section id="stepBoard" class="hidden">
+<section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="row"><button class="btn green" id="regularPattern">REGULAR BINGO — ANY LINE</button><button class="btn dark" id="customPattern">CUSTOM PATTERN</button></div><p id="patternChoiceHint" class="muted">Regular Bingo accepts any row, column, or diagonal. Or choose Custom to draw the exact shape.</p><div id="customPatternControls"><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></div></section><section id="stepBoard" class="hidden">
 <div class="card">
 <h2>2. CAPTURE CALLER TV — NOT A BINGO CARD</h2><p style="background:#fff3cd;color:#302300;padding:12px;border-radius:9px;font-weight:800">FIRST: Photograph the TV screen showing all 75 called-number positions. Do NOT photograph a player’s 5×5 card here.</p><button class="btn dark" id="editPattern">EDIT WINNING PATTERN</button>
 <p class="muted">Tap USE CAMERA, zoom onto the caller display, then CAPTURE. For a 75-number TV board, mark the top-left and bottom-right corners of the number grid; the app will compare the 75 fixed cells visually. Review the result before locking.</p>
@@ -101,10 +101,10 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 const $=id=>document.getElementById(id);
 const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall","Center 3×3 Square"];
 const storageKey="bingo-validator-v2";
-let called=new Set(),pattern=pats[0],patternCells=new Set(),patternSaved=false,locked=false,stream=null,workerPromise=null,busy=false,generation=0;
+let called=new Set(),pattern="Regular Bingo",patternCells=new Set(),patternSaved=false,locked=false,stream=null,workerPromise=null,busy=false,generation=0;
 let cropPoints=[];
 let card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));
-try{const s=JSON.parse(localStorage.getItem(storageKey)||"null");if(s&&s.confirmed&&pats.includes(s.pattern)&&Array.isArray(s.called)&&s.called.every(n=>Number.isInteger(n)&&n>=1&&n<=75)){called=new Set(s.called);pattern=s.pattern;patternCells=new Set(Array.isArray(s.patternCells)?s.patternCells:[]);patternSaved=patternCells.size>0;locked=true}}catch{}
+try{const s=JSON.parse(localStorage.getItem(storageKey)||"null");if(s&&s.confirmed&&(pats.includes(s.pattern)||s.pattern==="Regular Bingo")&&Array.isArray(s.called)&&s.called.every(n=>Number.isInteger(n)&&n>=1&&n<=75)){called=new Set(s.called);pattern=s.pattern;patternCells=new Set(Array.isArray(s.patternCells)?s.patternCells:[]);patternSaved=patternCells.size>0;locked=true}}catch{}
 function save(){try{localStorage.setItem(storageKey,JSON.stringify({called:[...called],pattern,patternCells:[...patternCells],confirmed:locked}))}catch{}}
 function render75(){
  $("grid75").replaceChildren();
@@ -156,7 +156,7 @@ $("patternGrid").addEventListener("pointerup",endPatternDrag);
 $("patternGrid").addEventListener("pointercancel",endPatternDrag);
 $("patternGrid").addEventListener("lostpointercapture",endPatternDrag);
 function renderPatterns(){ /* Legacy presets replaced by custom 5×5 editor. */ }
-function showMode(){$("stepPattern").classList.toggle("hidden",locked||patternSaved);$("stepBoard").classList.toggle("hidden",locked||!patternSaved);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=(patternCells.size?"Custom pattern ("+patternCells.size+" squares)":pattern)+" • "+called.size+" confirmed numbers"}
+function showMode(){$("customPatternControls").classList.toggle("hidden",pattern==="Regular Bingo"&&patternCells.size===0);$("stepPattern").classList.toggle("hidden",locked||patternSaved);$("stepBoard").classList.toggle("hidden",locked||!patternSaved);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=(patternCells.size?"Custom pattern ("+patternCells.size+" squares)":pattern)+" • "+called.size+" confirmed numbers"}
 function status(kind,text){$(kind+"Status").textContent=text}
 function setBusy(value){busy=value;["captureBoard","captureCard","boardFile","cardFile","lockGame","verifyCard","useBoardCamera","useCardCamera","manualBoard","manualCard"].forEach(id=>$(id).disabled=value)}
 async function startCamera(kind){
@@ -354,7 +354,7 @@ function patternLines(p){
  const rows=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>[r,c]));
  const cols=Array.from({length:5},(_,c)=>Array.from({length:5},(_,r)=>[r,c]));
  const diagonals=[Array.from({length:5},(_,i)=>[i,i]),Array.from({length:5},(_,i)=>[i,4-i])];
- if(p===pats[0])return rows;if(p===pats[1])return cols;if(p===pats[2])return diagonals;
+ if(p==="Regular Bingo")return [...rows,...cols,...diagonals];if(p===pats[0])return rows;if(p===pats[1])return cols;if(p===pats[2])return diagonals;
  if(p===pats[3])return [[[0,0],[0,4],[4,0],[4,4]]];
  if(p===pats[4])return [[...diagonals[0],...diagonals[1].filter(([r])=>r!==2)]];
  if(p===pats[5])return [rows.flat()];if(p===pats[6])return [rows.slice(1,4).map(row=>row.slice(1,4)).flat()];throw new Error("Unknown pattern");
@@ -395,15 +395,17 @@ $("verifyCard").onclick=verify;
 $("topNew").onclick=()=>{
  if(busy){status(locked?"card":"board","Wait for recognition to finish before starting a new game.");return}
  if(!confirm("Clear this game and start a new game?"))return;
- called.clear();pattern=pats[0];patternCells.clear();patternSaved=false;locked=false;generation++;try{localStorage.removeItem(storageKey)}catch{}
+ called.clear();pattern="Regular Bingo";patternCells.clear();patternSaved=false;locked=false;generation++;try{localStorage.removeItem(storageKey)}catch{}
  ["board","card"].forEach(k=>{$(k+"Preview").classList.add("hidden");$(k+"CamWrap").classList.remove("hidden");$(k+"File").value=""});drawBoardMarks();
  $("confirmBoard").classList.add("hidden");$("cardEditor").classList.add("hidden");$("result").classList.add("hidden");$("boardConfirmed").checked=false;
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
  render75();renderPatterns();renderPatternGrid();showMode();status("board","New game. Tap USE CAMERA or choose a photo.");
 };
+$("regularPattern").onclick=()=>{pattern="Regular Bingo";patternCells.clear();patternSaved=true;renderPatternGrid();showMode();status("board","Regular Bingo selected: any row, column, or diagonal. Capture caller board.")};
+$("customPattern").onclick=()=>{pattern="Custom Pattern";patternSaved=false;showMode();status("pattern","Draw the required squares, then SAVE PATTERN.")};
 $("clearPattern").onclick=()=>{patternCells.clear();patternSaved=false;renderPatternGrid();status("pattern","Pattern cleared. Tap the squares required to win.")};
-$("savePattern").onclick=()=>{if(!patternCells.size){status("pattern","Select at least one required square.");return}patternSaved=true;showMode();status("board","Pattern saved. Capture the caller board next.")};
-$("editPattern").onclick=()=>{patternSaved=false;showMode()};
+$("savePattern").onclick=()=>{if(!patternCells.size){status("pattern","Select at least one required square.");return}pattern="Custom Pattern";patternSaved=true;showMode();status("board","Pattern saved. Capture the caller board next.")};
+$("editPattern").onclick=()=>{patternSaved=false;pattern="Custom Pattern";showMode()};
 render75();renderPatterns();renderPatternGrid();showMode();
 
 $("cardPreview").onclick=e=>{
