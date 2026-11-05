@@ -47,7 +47,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.11 · guided capture</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.12 · clear corner markers</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></section><section id="stepBoard" class="hidden">
@@ -264,15 +264,14 @@ function boardCells(){
  for(let row=0;row<ROWS;row++)for(let col=0;col<COLS;col++)out.push({num:wide?row*15+col+1:col*15+row+1,x:x1+(x2-x1)*col/(COLS-1),y:y1+(y2-y1)*row/(ROWS-1)});
  return out;
 }
-function drawBoardMarks(lit){
+function drawBoardMarks(){
  const img=$("boardPreview"),cv=$("boardMarks");
  if(img.classList.contains("hidden")||!img.naturalWidth){cv.width=0;return}
- const r=img.getBoundingClientRect(),pr=img.parentElement.getBoundingClientRect(),s=Math.min(r.width/img.naturalWidth,r.height/img.naturalHeight),w=img.naturalWidth*s,h=img.naturalHeight*s;
+ const r=img.getBoundingClientRect(),pr=img.parentElement.getBoundingClientRect(),scale=Math.min(r.width/img.naturalWidth,r.height/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale;
  cv.style.left=(r.left-pr.left)+"px";cv.style.top=(r.top-pr.top)+"px";cv.style.width=r.width+"px";cv.style.height=r.height+"px";
  const dpr=window.devicePixelRatio||1;cv.width=r.width*dpr;cv.height=r.height*dpr;const g=cv.getContext("2d");g.scale(dpr,dpr);
- const ox=(r.width-w)/2,oy=(r.height-h)/2,cells=boardCells();
- cells.forEach(o=>{const on=lit&&lit.has(o.num);g.beginPath();g.arc(ox+o.x*w,oy+o.y*h,on?4:2.5,0,7);g.fillStyle=on?"#3ddc84":"#ff3b30";g.fill()});
- if(!cells.length)boardCropPoints.forEach(([x,y])=>{g.beginPath();g.arc(ox+x*w,oy+y*h,6,0,7);g.strokeStyle="#ff3b30";g.lineWidth=2;g.stroke()});
+ const ox=(r.width-w)/2,oy=(r.height-h)/2;
+ boardCropPoints.forEach(([x,y],i)=>{g.beginPath();g.arc(ox+x*w,oy+y*h,9,0,Math.PI*2);g.fillStyle=i===0?"#39df7a":"#ffcc00";g.fill();g.lineWidth=3;g.strokeStyle="#101827";g.stroke()});
 }
 window.addEventListener("resize",()=>drawBoardMarks());
 $("boardPreview").onclick=e=>{
@@ -306,7 +305,7 @@ $("readBoardGrid").onclick=()=>{
  for(let i=1;i<vals.length;i++){if(vals[i]-vals[i-1]>gap){gap=vals[i]-vals[i-1];threshold=(vals[i]+vals[i-1])/2}}
  if(gap<20){status("board","Couldn't tell lit numbers from unlit ones. Get closer, avoid glare, retake, or enter the numbers manually.");return;}
  called=new Set(scores.filter(o=>o.score>threshold).map(o=>o.num));drawBoardMarks(called);$("boardConfirmed").checked=false;render75();renderPatterns();$("confirmBoard").classList.remove("hidden");
- status("board",called.size+" visually active cells detected. Review the 75-number grid and correct any misses before locking.");
+ status("board",called.size+" POSSIBLE called numbers detected. This is an unverified estimate: review and correct the numbers below before locking.");$("confirmBoard").scrollIntoView({behavior:"smooth",block:"start"});
 };
 function renderCardEditor(){
  $("cardInputs").replaceChildren();$("cardConfirmed").checked=false;$("cardEditor").classList.remove("hidden");$("result").classList.add("hidden");
