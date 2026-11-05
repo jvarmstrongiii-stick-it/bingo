@@ -47,7 +47,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.14 · regular bingo</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.15 · digit brightness</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="row"><button class="btn green" id="regularPattern">REGULAR BINGO — ANY LINE</button><button class="btn dark" id="customPattern">CUSTOM PATTERN</button></div><p id="patternChoiceHint" class="muted">Regular Bingo accepts any row, column, or diagonal. Or choose Custom to draw the exact shape.</p><div id="customPatternControls"><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></div></section><section id="stepBoard" class="hidden">
@@ -287,53 +287,49 @@ $("readBoardGrid").onclick=()=>{
  const img=$("boardPreview"),c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;const ctx=c.getContext("2d");ctx.drawImage(img,0,0);
  let [[x1,y1],[x2,y2]]=boardCropPoints;x1*=c.width;x2*=c.width;y1*=c.height;y2*=c.height;if(x2<x1)[x1,x2]=[x2,x1];if(y2<y1)[y1,y2]=[y2,y1];
 
+
  const data=ctx.getImageData(0,0,c.width,c.height).data,scores=[];
- // Each TV number occupies a fixed cell. Measure the central cell interior,
- // not the single brightest pixel (which is usually white text on BOTH lit and unlit cells).
+ // Read the printed DIGITS, not their dark backgrounds. Called digits are bright
+ // white; uncalled digits are muted gray. Each sample uses only the inner numeral area.
  const wide=(x2-x1)>(y2-y1),ROWS=wide?5:15,COLS=wide?15:5;
  const dx=(x2-x1)/(COLS-1),dy=(y2-y1)/(ROWS-1);
+ if(dx<8||dy<8){status("board","Number grid is too small to read. Move closer or zoom in.");return;}
  for(let row=0;row<ROWS;row++)for(let col=0;col<COLS;col++){
   const cx=x1+dx*col,cy=y1+dy*row;
-  const samples=[];
-  // Sample away from the printed numeral itself and from cell borders.
-  for(let yy=Math.max(0,Math.floor(cy-dy*.32));yy<Math.min(c.height,Math.ceil(cy+dy*.32));yy+=2)
-   for(let xx=Math.max(0,Math.floor(cx-dx*.32));xx<Math.min(c.width,Math.ceil(cx+dx*.32));xx+=2){
-    const i=(yy*c.width+xx)*4,r=data[i],g=data[i+1],b=data[i+2];
+  const pixels=[];
+  for(let yy=Math.max(0,Math.floor(cy-dy*.31));yy<Math.min(c.height,Math.ceil(cy+dy*.31));yy++)
+   for(let xx=Math.max(0,Math.floor(cx-dx*.35));xx<Math.min(c.width,Math.ceil(cx+dx*.35));xx++){
+    const i=(yy*c.width+xx)*4;
+    const r=data[i],g=data[i+1],b=data[i+2];
+    // Neutral bright digit strokes are distinct from saturated highlights.
     const max=Math.max(r,g,b),min=Math.min(r,g,b);
-    samples.push({light:(r+g+b)/3,sat:max-min});
+    const luminance=.2126*r+.7152*g+.0722*b;
+    if(max-min<85)pixels.push(luminance);
    }
-  if(!samples.length){status("board","Grid corners are too close together. Retake and mark the centers of the first and last number.");return;}
-  // A trimmed mean suppresses white numeral strokes and occasional reflections.
-  samples.sort((a,b)=>a.light-b.light);
-  const lo=Math.floor(samples.length*.15),hi=Math.max(lo+1,Math.floor(samples.length*.75));
-  let light=0,sat=0;
-  for(let k=lo;k<hi;k++){light+=samples[k].light;sat+=samples[k].sat}
-  light/=(hi-lo);sat/=(hi-lo);
-  scores.push({num:wide?row*15+col+1:col*15+row+1,light,sat});
+  if(pixels.length<12){status("board","Unable to read the number cells. Keep the full grid in view.");return;}
+  pixels.sort((a,b)=>a-b);
+  // Top decile tracks white numeral strokes; a mean of the cell would track its background.
+  const lo=Math.floor(pixels.length*.88);let sum=0;
+  for(let k=lo;k<pixels.length;k++)sum+=pixels[k];
+  scores.push({num:wide?row*15+col+1:col*15+row+1,score:sum/(pixels.length-lo)});
  }
- // Use Otsu thresholding rather than the largest adjacent gap, which is often a glare artifact.
- function split(values){
-  const sorted=[...values].sort((a,b)=>a-b);
-  let best=-1,threshold=0;
-  for(let i=5;i<sorted.length-5;i++){
-   if(sorted[i]===sorted[i-1])continue;
-   const low=sorted.slice(0,i),high=sorted.slice(i);
-   const m1=low.reduce((a,b)=>a+b,0)/low.length,m2=high.reduce((a,b)=>a+b,0)/high.length;
-   const between=low.length*high.length*(m2-m1)**2;
-   if(between>best){best=between;threshold=(sorted[i-1]+sorted[i])/2}
-  }
-  return {threshold,range:sorted[sorted.length-1]-sorted[0]};
+ // Separate bright and dim numeral strokes using a two-cluster fit.
+ const sorted=scores.map(o=>o.score).sort((a,b)=>a-b);
+ let low=sorted[Math.floor(sorted.length*.2)],high=sorted[Math.floor(sorted.length*.8)];
+ for(let iter=0;iter<15;iter++){
+  const mid=(low+high)/2;let lsum=0,lsize=0,hsum=0,hsize=0;
+  for(const v of sorted){if(v<mid){lsum+=v;lsize++}else{hsum+=v;hsize++}}
+  if(!lsize||!hsize)break;
+  const nextLow=lsum/lsize,nextHigh=hsum/hsize;
+  if(Math.abs(nextLow-low)+Math.abs(nextHigh-high)<.01)break;
+  low=nextLow;high=nextHigh;
  }
- const brightness=split(scores.map(o=>o.light)),saturation=split(scores.map(o=>o.sat));
- // On most boards called cells are visibly brighter; if brightness has little
- // separation, try color saturation (lit indicators often use colored fills).
- const useSat=brightness.range<18&&saturation.range>22;
- const metric=useSat?"sat":"light",cut=useSat?saturation:brightness;
- if(cut.range<14){status("board","Unable to distinguish illuminated cells in this photo. Try a closer, straighter photo with the entire TV number grid visible.");return;}
- const detected=scores.filter(o=>o[metric]>cut.threshold).map(o=>o.num);
- if(detected.length<3||detected.length>69){status("board","Photo recognition was uncertain ("+detected.length+" lit cells). Try a clearer photo; no numbers were changed.");return;}
+ const separation=high-low,threshold=(low+high)/2;
+ if(separation<17){status("board","Couldn't reliably separate white called digits from gray uncalled digits. No numbers changed.");return;}
+ const detected=scores.filter(o=>o.score>=threshold).map(o=>o.num);
+ if(detected.length<3||detected.length>69){status("board","Uncertain recognition ("+detected.length+" bright digits). No numbers changed.");return;}
  called=new Set(detected);drawBoardMarks();$("boardConfirmed").checked=false;render75();renderPatterns();$("confirmBoard").classList.remove("hidden");
- status("board",called.size+" POSSIBLE called numbers detected. Review and correct before locking.");$("confirmBoard").scrollIntoView({behavior:"smooth",block:"start"});
+ status("board",called.size+" bright-number candidates. Check the highlighted numbers against the TV before locking.");$("confirmBoard").scrollIntoView({behavior:"smooth",block:"start"});
 };
 function renderCardEditor(){
  $("cardInputs").replaceChildren();$("cardConfirmed").checked=false;$("cardEditor").classList.remove("hidden");$("result").classList.add("hidden");
