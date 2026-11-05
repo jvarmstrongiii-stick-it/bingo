@@ -47,12 +47,12 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.10 · swipe patterns</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.11 · guided capture</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></section><section id="stepBoard" class="hidden">
 <div class="card">
-<h2>2. Read Caller Board</h2><button class="btn dark" id="editPattern">EDIT WINNING PATTERN</button>
+<h2>2. CAPTURE CALLER TV — NOT A BINGO CARD</h2><p style="background:#fff3cd;color:#302300;padding:12px;border-radius:9px;font-weight:800">FIRST: Photograph the TV screen showing all 75 called-number positions. Do NOT photograph a player’s 5×5 card here.</p><button class="btn dark" id="editPattern">EDIT WINNING PATTERN</button>
 <p class="muted">Tap USE CAMERA, zoom onto the caller display, then CAPTURE. For a 75-number TV board, mark the top-left and bottom-right corners of the number grid; the app will compare the 75 fixed cells visually. Review the result before locking.</p>
 <div class="camera" id="boardCamWrap"><video id="boardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureBoard" aria-label="Capture caller board">CAPTURE</button></div>
 <div style="position:relative"><img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px"><canvas id="boardMarks" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div>
@@ -81,7 +81,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </div>
 
 <div class="card">
-<h2>Scan Claimed Card</h2>
+<h2>4. SCAN PLAYER’S WINNING CARD</h2><p style="background:#dcfce7;color:#103b20;padding:12px;border-radius:9px;font-weight:800">NOW photograph the player’s 5×5 Bingo card. The caller board has already been locked.</p>
 <p class="muted">Capture one straight, upright card with B I N G O at the top. Review all 24 numbers below before verifying; ink and glare can hide digits.</p>
 <div class="camera" id="cardCamWrap"><video id="cardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureCard" aria-label="Capture bingo card">CAPTURE</button></div>
 <p id="cropHint" class="muted hidden">Tap the top-left corner of the 5×5 number grid, then its bottom-right corner. Exclude the BINGO heading. Keep the card upright and square.</p><button id="readGrid" class="btn green hidden" disabled>READ SELECTED CARD GRID</button><img id="cardPreview" class="preview hidden" style="height:auto;max-height:none;border-radius:16px;margin-top:10px;cursor:crosshair">
@@ -280,7 +280,7 @@ $("boardPreview").onclick=e=>{
  if(x<0||x>1||y<0||y>1){status("board","That tap was outside the photo. Tap on the number grid itself.");return;}
  if(boardCropPoints.length>=2)boardCropPoints=[];boardCropPoints.push([x,y]);
  drawBoardMarks();
- status("board",boardCropPoints.length===1?"Now tap the BOTTOM-RIGHT cell.":"Check the red dots sit on the numbers (tap the corners again if not), then tap READ 75-CELL BOARD.");
+ status("board",boardCropPoints.length===1?"Now tap the BOTTOM-RIGHT cell.":"Now tap the green READ 75-CELL BOARD button below the photo.");
 };
 $("readBoardGrid").onclick=()=>{
  status("board","Reading 75-cell board…");
@@ -362,7 +362,7 @@ $("manualBoard").onclick=()=>{$("confirmBoard").classList.remove("hidden");rende
 $("manualCard").onclick=()=>{card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));renderCardEditor()};
 $("lockGame").onclick=()=>{
  if(!called.size||!$("boardConfirmed").checked){status("board","Select the called numbers and tick the confirmation box before locking.");return}
- locked=true;save();showMode();status("card","Tap USE CAMERA, then CAPTURE; or choose a photo.");
+ locked=true;save();showMode();status("card","Game locked! NOW scan the player’s winning 5×5 Bingo card.");$("stepCards").scrollIntoView({behavior:"smooth",block:"start"});
 };
 $("verifyCard").onclick=verify;
 $("topNew").onclick=()=>{
