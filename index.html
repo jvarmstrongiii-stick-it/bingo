@@ -24,7 +24,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 .scanline{position:absolute;left:5%;right:5%;height:3px;background:#4eed88;box-shadow:0 0 14px #4eed88;animation:s 2s infinite}
 @keyframes s{0%{top:10%}50%{top:90%}100%{top:10%}}
 .shutter{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:5;width:auto;min-width:130px;border:4px solid #fff;border-radius:999px;padding:14px 22px;background:#39df7a;color:#06130a;font-size:17px;font-weight:1000;box-shadow:0 3px 18px #000}
-.patternGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;max-width:390px;margin:12px auto}.patternCell{aspect-ratio:1;border:2px solid #596779;border-radius:9px;background:#253142;color:#fff;font-size:15px;font-weight:800}.patternCell.on{background:#39df7a;color:#06130a;border-color:#39df7a}.grid75{display:grid;grid-template-columns:repeat(15,1fr);gap:3px}
+.patternGrid{touch-action:none;user-select:none;-webkit-user-select:none;display:grid;grid-template-columns:repeat(5,1fr);gap:7px;max-width:390px;margin:12px auto}.patternCell{aspect-ratio:1;border:2px solid #596779;border-radius:9px;background:#253142;color:#fff;font-size:15px;font-weight:800}.patternCell.on{background:#39df7a;color:#06130a;border-color:#39df7a}.grid75{display:grid;grid-template-columns:repeat(15,1fr);gap:3px}
 .n{aspect-ratio:1;border:0;border-radius:4px;background:#28323f;color:#8994a4;font-size:11px;padding:0}
 .n.on{background:#fff;color:#000;font-weight:900}
 .patterns{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -47,7 +47,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.9 · pattern grid fix</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.10 · swipe patterns</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></section><section id="stepBoard" class="hidden">
@@ -111,7 +111,50 @@ function render75(){
  for(let n=1;n<=75;n++){const b=document.createElement("button");b.className="n "+(called.has(n)?"on":"");b.textContent=n;b.setAttribute("aria-pressed",String(called.has(n)));b.onclick=()=>{called.has(n)?called.delete(n):called.add(n);$("boardConfirmed").checked=false;render75()};$("grid75").append(b)}
  $("calledCount").textContent=called.size;
 }
-function renderPatternGrid(){const root=$("patternGrid");root.replaceChildren();for(let i=0;i<25;i++){const b=document.createElement("button");b.type="button";b.className="patternCell "+(patternCells.has(i)?"on":"");b.textContent=i===12?"FREE":patternCells.has(i)?"✓":"";b.setAttribute("aria-label","Row "+(Math.floor(i/5)+1)+" column "+(i%5+1));b.setAttribute("aria-pressed",String(patternCells.has(i)));b.onclick=()=>{patternCells.has(i)?patternCells.delete(i):patternCells.add(i);patternSaved=false;renderPatternGrid()};root.append(b)}}
+let patternDrag=false,patternDragValue=true,patternLastCell=-1;
+function setPatternCell(i,value){
+ if(i<0||i>24)return;
+ if(value)patternCells.add(i);else patternCells.delete(i);
+ patternSaved=false;
+ const b=$("patternGrid").children[i];
+ if(b){b.classList.toggle("on",value);b.textContent=i===12?"FREE":value?"✓":"";b.setAttribute("aria-pressed",String(value))}
+}
+function patternCellAt(x,y){
+ const el=document.elementFromPoint(x,y);
+ const b=el&&el.closest(".patternCell");
+ return b&&$("patternGrid").contains(b)?Number(b.dataset.index):-1;
+}
+function renderPatternGrid(){
+ const root=$("patternGrid");root.replaceChildren();
+ for(let i=0;i<25;i++){
+  const b=document.createElement("button");b.type="button";b.dataset.index=String(i);
+  b.className="patternCell "+(patternCells.has(i)?"on":"");
+  b.textContent=i===12?"FREE":patternCells.has(i)?"✓":"";
+  b.setAttribute("aria-label","Row "+(Math.floor(i/5)+1)+" column "+(i%5+1));
+  b.setAttribute("aria-pressed",String(patternCells.has(i)));
+  root.append(b);
+ }
+}
+$("patternGrid").addEventListener("pointerdown",e=>{
+ const i=patternCellAt(e.clientX,e.clientY);if(i<0)return;
+ e.preventDefault();patternDrag=true;patternDragValue=!patternCells.has(i);patternLastCell=i;
+ $("patternGrid").setPointerCapture(e.pointerId);setPatternCell(i,patternDragValue);
+});
+$("patternGrid").addEventListener("pointermove",e=>{
+ if(!patternDrag)return;
+ e.preventDefault();const i=patternCellAt(e.clientX,e.clientY);
+ if(i<0||i===patternLastCell)return;
+ // Fill all intervening squares when the finger moves quickly across a row or column.
+ const prev=patternLastCell,r1=Math.floor(prev/5),r2=Math.floor(i/5),c1=prev%5,c2=i%5;
+ if(r1===r2){for(let c=Math.min(c1,c2);c<=Math.max(c1,c2);c++)setPatternCell(r1*5+c,patternDragValue)}
+ else if(c1===c2){for(let r=Math.min(r1,r2);r<=Math.max(r1,r2);r++)setPatternCell(r*5+c1,patternDragValue)}
+ else setPatternCell(i,patternDragValue);
+ patternLastCell=i;
+});
+function endPatternDrag(){patternDrag=false;patternLastCell=-1}
+$("patternGrid").addEventListener("pointerup",endPatternDrag);
+$("patternGrid").addEventListener("pointercancel",endPatternDrag);
+$("patternGrid").addEventListener("lostpointercapture",endPatternDrag);
 function renderPatterns(){ /* Legacy presets replaced by custom 5×5 editor. */ }
 function showMode(){$("stepPattern").classList.toggle("hidden",locked||patternSaved);$("stepBoard").classList.toggle("hidden",locked||!patternSaved);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=(patternCells.size?"Custom pattern ("+patternCells.size+" squares)":pattern)+" • "+called.size+" confirmed numbers"}
 function status(kind,text){$(kind+"Status").textContent=text}
