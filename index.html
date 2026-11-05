@@ -47,7 +47,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
-<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.17.1 · syntax-verified</div></div><button id="topNew">NEW GAME</button></header>
+<header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.11.04.9 · pattern grid fix</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
 <section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></section><section id="stepBoard" class="hidden">
@@ -112,10 +112,7 @@ function render75(){
  $("calledCount").textContent=called.size;
 }
 function renderPatternGrid(){const root=$("patternGrid");root.replaceChildren();for(let i=0;i<25;i++){const b=document.createElement("button");b.type="button";b.className="patternCell "+(patternCells.has(i)?"on":"");b.textContent=i===12?"FREE":patternCells.has(i)?"✓":"";b.setAttribute("aria-label","Row "+(Math.floor(i/5)+1)+" column "+(i%5+1));b.setAttribute("aria-pressed",String(patternCells.has(i)));b.onclick=()=>{patternCells.has(i)?patternCells.delete(i):patternCells.add(i);patternSaved=false;renderPatternGrid()};root.append(b)}}
-function renderPatterns(){
- $("patterns").replaceChildren();
- pats.forEach(p=>{const b=document.createElement("button");b.className="p "+(pattern===p?"on":"");b.textContent=p;b.onclick=()=>{pattern=p;renderPatterns()};$("patterns").append(b)})
-}
+function renderPatterns(){ /* Legacy presets replaced by custom 5×5 editor. */ }
 function showMode(){$("stepPattern").classList.toggle("hidden",locked||patternSaved);$("stepBoard").classList.toggle("hidden",locked||!patternSaved);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=(patternCells.size?"Custom pattern ("+patternCells.size+" squares)":pattern)+" • "+called.size+" confirmed numbers"}
 function status(kind,text){$(kind+"Status").textContent=text}
 function setBusy(value){busy=value;["captureBoard","captureCard","boardFile","cardFile","lockGame","verifyCard","useBoardCamera","useCardCamera","manualBoard","manualCard"].forEach(id=>$(id).disabled=value)}
