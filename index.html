@@ -24,7 +24,7 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 .scanline{position:absolute;left:5%;right:5%;height:3px;background:#4eed88;box-shadow:0 0 14px #4eed88;animation:s 2s infinite}
 @keyframes s{0%{top:10%}50%{top:90%}100%{top:10%}}
 .shutter{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:5;width:auto;min-width:130px;border:4px solid #fff;border-radius:999px;padding:14px 22px;background:#39df7a;color:#06130a;font-size:17px;font-weight:1000;box-shadow:0 3px 18px #000}
-.grid75{display:grid;grid-template-columns:repeat(15,1fr);gap:3px}
+.patternGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;max-width:390px;margin:12px auto}.patternCell{aspect-ratio:1;border:2px solid #596779;border-radius:9px;background:#253142;color:#fff;font-size:15px;font-weight:800}.patternCell.on{background:#39df7a;color:#06130a;border-color:#39df7a}.grid75{display:grid;grid-template-columns:repeat(15,1fr);gap:3px}
 .n{aspect-ratio:1;border:0;border-radius:4px;background:#28323f;color:#8994a4;font-size:11px;padding:0}
 .n.on{background:#fff;color:#000;font-weight:900}
 .patterns{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -50,9 +50,9 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 <header><div><b>BINGO VALIDATOR</b><div class="muted" style="font-size:12px">Build 2026.10.17.1 · syntax-verified</div></div><button id="topNew">NEW GAME</button></header>
 <main>
 
-<section id="stepBoard">
+<section id="stepPattern"><div class="card"><h2>1. Set Winning Pattern</h2><p class="muted">Tap every square required to win. The center FREE space counts automatically if selected. For an E, tap the exact shape the caller announces.</p><div class="patternGrid" id="patternGrid"></div><div class="row"><button class="btn dark" id="clearPattern">CLEAR</button><button class="btn green" id="savePattern">SAVE PATTERN</button></div><p id="patternStatus" class="center muted" role="status">Select the required squares.</p></div></section><section id="stepBoard" class="hidden">
 <div class="card">
-<h2>1. Read Caller Board</h2>
+<h2>2. Read Caller Board</h2><button class="btn dark" id="editPattern">EDIT WINNING PATTERN</button>
 <p class="muted">Tap USE CAMERA, zoom onto the caller display, then CAPTURE. For a 75-number TV board, mark the top-left and bottom-right corners of the number grid; the app will compare the 75 fixed cells visually. Review the result before locking.</p>
 <div class="camera" id="boardCamWrap"><video id="boardCam" autoplay playsinline muted></video><div class="scanline"></div><button class="shutter" id="captureBoard" aria-label="Capture caller board">CAPTURE</button></div>
 <div style="position:relative"><img id="boardPreview" class="preview hidden" style="max-height:420px;border-radius:16px;margin-top:10px"><canvas id="boardMarks" style="position:absolute;left:0;top:0;pointer-events:none"></canvas></div>
@@ -66,12 +66,11 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 </div>
 
 <div id="confirmBoard" class="card hidden">
-<h2>2. Confirm Called Numbers</h2>
+<h2>3. Confirm Called Numbers</h2>
 <p class="center"><b><span id="calledCount">0</span> NUMBERS CALLED</b></p>
 <div class="grid75" id="grid75"></div>
 <p class="muted">White numbers are selected. Compare every number with the caller; tap to correct. Recognition is a draft.</p><label><input type="checkbox" id="boardConfirmed"> I checked the called numbers against the caller.</label>
-<h2 style="margin-top:18px">3. Current Pattern</h2>
-<div class="patterns" id="patterns"></div>
+<h2 style="margin-top:18px">Winning Pattern</h2><p class="muted">Custom pattern selected at the start. Edit it above before locking.</p>
 <button class="btn green" id="lockGame">LOCK GAME</button>
 </div>
 </section>
@@ -102,21 +101,22 @@ video,.preview{width:100%;height:100%;object-fit:contain;background:#000}
 const $=id=>document.getElementById(id);
 const pats=["Any Horizontal Line","Any Vertical Line","Any Diagonal Line","Four Corners","X","Blackout / Coverall","Center 3×3 Square"];
 const storageKey="bingo-validator-v2";
-let called=new Set(),pattern=pats[0],locked=false,stream=null,workerPromise=null,busy=false,generation=0;
+let called=new Set(),pattern=pats[0],patternCells=new Set(),patternSaved=false,locked=false,stream=null,workerPromise=null,busy=false,generation=0;
 let cropPoints=[];
 let card=Array.from({length:5},(_,r)=>Array.from({length:5},(_,c)=>r===2&&c===2?"FREE":null));
-try{const s=JSON.parse(localStorage.getItem(storageKey)||"null");if(s&&s.confirmed&&pats.includes(s.pattern)&&Array.isArray(s.called)&&s.called.every(n=>Number.isInteger(n)&&n>=1&&n<=75)){called=new Set(s.called);pattern=s.pattern;locked=true}}catch{}
-function save(){try{localStorage.setItem(storageKey,JSON.stringify({called:[...called],pattern,confirmed:locked}))}catch{}}
+try{const s=JSON.parse(localStorage.getItem(storageKey)||"null");if(s&&s.confirmed&&pats.includes(s.pattern)&&Array.isArray(s.called)&&s.called.every(n=>Number.isInteger(n)&&n>=1&&n<=75)){called=new Set(s.called);pattern=s.pattern;patternCells=new Set(Array.isArray(s.patternCells)?s.patternCells:[]);patternSaved=patternCells.size>0;locked=true}}catch{}
+function save(){try{localStorage.setItem(storageKey,JSON.stringify({called:[...called],pattern,patternCells:[...patternCells],confirmed:locked}))}catch{}}
 function render75(){
  $("grid75").replaceChildren();
  for(let n=1;n<=75;n++){const b=document.createElement("button");b.className="n "+(called.has(n)?"on":"");b.textContent=n;b.setAttribute("aria-pressed",String(called.has(n)));b.onclick=()=>{called.has(n)?called.delete(n):called.add(n);$("boardConfirmed").checked=false;render75()};$("grid75").append(b)}
  $("calledCount").textContent=called.size;
 }
+function renderPatternGrid(){const root=$("patternGrid");root.replaceChildren();for(let i=0;i<25;i++){const b=document.createElement("button");b.type="button";b.className="patternCell "+(patternCells.has(i)?"on":"");b.textContent=i===12?"FREE":patternCells.has(i)?"✓":"";b.setAttribute("aria-label","Row "+(Math.floor(i/5)+1)+" column "+(i%5+1));b.setAttribute("aria-pressed",String(patternCells.has(i)));b.onclick=()=>{patternCells.has(i)?patternCells.delete(i):patternCells.add(i);patternSaved=false;renderPatternGrid()};root.append(b)}}
 function renderPatterns(){
  $("patterns").replaceChildren();
  pats.forEach(p=>{const b=document.createElement("button");b.className="p "+(pattern===p?"on":"");b.textContent=p;b.onclick=()=>{pattern=p;renderPatterns()};$("patterns").append(b)})
 }
-function showMode(){$("stepBoard").classList.toggle("hidden",locked);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=pattern+" • "+called.size+" confirmed numbers"}
+function showMode(){$("stepPattern").classList.toggle("hidden",locked||patternSaved);$("stepBoard").classList.toggle("hidden",locked||!patternSaved);$("stepCards").classList.toggle("hidden",!locked);if(locked)$("lockedSummary").textContent=(patternCells.size?"Custom pattern ("+patternCells.size+" squares)":pattern)+" • "+called.size+" confirmed numbers"}
 function status(kind,text){$(kind+"Status").textContent=text}
 function setBusy(value){busy=value;["captureBoard","captureCard","boardFile","cardFile","lockGame","verifyCard","useBoardCamera","useCardCamera","manualBoard","manualCard"].forEach(id=>$(id).disabled=value)}
 async function startCamera(kind){
@@ -293,7 +293,7 @@ function patternLines(p){
  if(p===pats[5])return [rows.flat()];if(p===pats[6])return [rows.slice(1,4).map(row=>row.slice(1,4)).flat()];throw new Error("Unknown pattern");
 }
 function evaluate(values,numbers,p){
- const lines=patternLines(p),hit=([r,c])=>values[r][c]==="FREE"||numbers.has(values[r][c]);
+ const lines=patternCells.size?[[...patternCells].map(i=>[Math.floor(i/5),i%5])]:patternLines(p),hit=([r,c])=>values[r][c]==="FREE"||numbers.has(values[r][c]);
  const winners=lines.filter(line=>line.every(hit));
  const closest=[...lines].sort((a,b)=>b.filter(hit).length-a.filter(hit).length)[0];
  return {winner:winners.length>0,required:winners.length?winners.flat():closest,missing:closest.filter(pos=>!hit(pos)).map(([r,c])=>values[r][c])};
@@ -305,7 +305,7 @@ function verify(){
   const verdict=evaluate(values,called,pattern);card=values;
   $("result").replaceChildren();
   const title=document.createElement("div");title.className=verdict.winner?"winner":"loser";title.textContent=verdict.winner?"✓ BINGO!":"NO BINGO";$("result").append(title);
-  const note=document.createElement("p");note.className="center";note.textContent=pattern+" — based on the numbers you confirmed."; $("result").append(note);
+  const note=document.createElement("p");note.className="center";note.textContent=(patternCells.size?"Custom winning pattern":pattern)+" — based on the numbers you confirmed."; $("result").append(note);
   const grid=document.createElement("div");grid.className="bcard";
   for(let r=0;r<5;r++)for(let c=0;c<5;c++){const cell=document.createElement("div");const req=verdict.required.some(([rr,cc])=>rr===r&&cc===c),ok=values[r][c]==="FREE"||called.has(values[r][c]);cell.className="cell "+(req?(ok?"good":"bad"):"");cell.textContent=values[r][c];grid.append(cell)}
   $("result").append(grid);
@@ -328,13 +328,16 @@ $("verifyCard").onclick=verify;
 $("topNew").onclick=()=>{
  if(busy){status(locked?"card":"board","Wait for recognition to finish before starting a new game.");return}
  if(!confirm("Clear this game and start a new game?"))return;
- called.clear();pattern=pats[0];locked=false;generation++;try{localStorage.removeItem(storageKey)}catch{}
+ called.clear();pattern=pats[0];patternCells.clear();patternSaved=false;locked=false;generation++;try{localStorage.removeItem(storageKey)}catch{}
  ["board","card"].forEach(k=>{$(k+"Preview").classList.add("hidden");$(k+"CamWrap").classList.remove("hidden");$(k+"File").value=""});drawBoardMarks();
  $("confirmBoard").classList.add("hidden");$("cardEditor").classList.add("hidden");$("result").classList.add("hidden");$("boardConfirmed").checked=false;
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
- render75();renderPatterns();showMode();status("board","New game. Tap USE CAMERA or choose a photo.");
+ render75();renderPatterns();renderPatternGrid();showMode();status("board","New game. Tap USE CAMERA or choose a photo.");
 };
-render75();renderPatterns();showMode();
+$("clearPattern").onclick=()=>{patternCells.clear();patternSaved=false;renderPatternGrid();status("pattern","Pattern cleared. Tap the squares required to win.")};
+$("savePattern").onclick=()=>{if(!patternCells.size){status("pattern","Select at least one required square.");return}patternSaved=true;showMode();status("board","Pattern saved. Capture the caller board next.")};
+$("editPattern").onclick=()=>{patternSaved=false;showMode()};
+render75();renderPatterns();renderPatternGrid();showMode();
 
 $("cardPreview").onclick=e=>{
  if(busy)return;const rect=$("cardPreview").getBoundingClientRect();
